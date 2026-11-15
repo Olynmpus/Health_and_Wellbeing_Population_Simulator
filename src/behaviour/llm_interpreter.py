@@ -38,6 +38,13 @@ class RecipientInterpretationResult:
     status: str
     error: str | None = None
 
+@dataclass(frozen=True)
+class CommunicationExperienceAssessmentResult:
+    assessment: dict | None
+    model: str
+    status: str
+    error: str | None = None
+
 def interpret_interaction(
     agent_id,
     interaction_context,
@@ -490,4 +497,219 @@ def interpret_recipient_message(
         comprehension_assessment=comprehension,
         model=model,
         status="interpreted",
+    )
+
+def assess_communication_experience(
+    participant_id,
+    interaction_context,
+    interaction,
+    model=DEFAULT_MODEL,
+    timeout=DEFAULT_TIMEOUT,
+):
+    """Tentatively assess one participant's experience of an interaction."""
+
+    if not isinstance(participant_id, str) or not participant_id.strip():
+        raise ValueError("participant_id must be a non-empty string.")
+
+    if not isinstance(interaction_context, dict):
+        raise ValueError("interaction_context must be a dictionary.")
+
+    if not isinstance(interaction, dict):
+        raise ValueError("interaction must be a dictionary.")
+
+    if not isinstance(model, str) or not model.strip():
+        raise ValueError("model must be a non-empty string.")
+
+    if (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or not math.isfinite(timeout)
+        or timeout <= 0
+    ):
+        raise ValueError("timeout must be a finite number greater than zero.")
+
+    context = {
+        "participant_context": interaction_context,
+        "completed_interaction": interaction,
+    }
+
+    try:
+        context_json = json.dumps(context, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return CommunicationExperienceAssessmentResult(
+            None, model, "failed", "context_serialization_failed"
+        )
+
+    metric_names = [
+        "communication_breakdown",
+        "understanding_difficulty",
+        "listening_effort",
+        "repetition_required",
+        "clarification_required",
+        "conversational_repair",
+        "missed_information",
+        "listening_fatigue",
+        "cognitive_fatigue",
+        "concentration_demand",
+        "frustration",
+        "disappointment",
+        "embarrassment",
+        "anxiety",
+        "stress",
+        "satisfaction",
+        "communication_confidence",
+        "willingness_to_participate",
+        "social_withdrawal",
+        "sense_of_inclusion",
+        "independence",
+        "interaction_completion",
+        "goal_achievement",
+        "participation_disruption",
+        "unresolved_communication_need",
+    ]
+
+    prompt = (
+        "Return exactly one JSON object with these fields: "
+        '{"metrics":{<each requested metric>:<valid value>},'
+        '"evidence":"brief evidence from the interaction",'
+        '"assessment_confidence":"low|moderate|high"}. '
+        f"Assess the experience of participant {participant_id} only. "
+        f"Include every metric in this list: {metric_names}. "
+        "For the first 21 metrics use 0=none, 1=low, 2=moderate, "
+        "3=high, 4=very high, or not_established. For "
+        "interaction_completion use completed, partially_completed, "
+        "not_completed, or not_established. For goal_achievement use "
+        "achieved, partially_achieved, not_achieved, or not_established. "
+        "For participation_disruption and unresolved_communication_need "
+        "use yes, no, or not_established. Use not_established when "
+        "there is insufficient evidence. Do not infer fatigue, emotions, "
+        "confidence, satisfaction, inclusion or independence merely "
+        "from a communication difficulty or hearing profile. "
+        "Do not treat an attempted clarification or repair as proof "
+        "that communication succeeded. Assess interaction outcomes "
+        "only when the available evidence supports them. "
+        "The assessment_confidence field describes your confidence "
+        "in this assessment, not the participant's confidence. "
+        "Do not invent events, feelings or outcomes. "
+        "This is a tentative LLM assessment, not a verified measurement. "
+        f"Context: {context_json}"
+    )
+
+    command = [
+        str(OLLAMA_EXECUTABLE),
+        "run",
+        model,
+        "--think=false",
+        "--hidethinking",
+        "--format",
+        "json",
+        prompt,
+    ]
+
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return CommunicationExperienceAssessmentResult(
+            None, model, "failed", "timeout"
+        )
+    except FileNotFoundError:
+        return CommunicationExperienceAssessmentResult(
+            None, model, "failed", "ollama_executable_not_found"
+        )
+
+    if result.returncode != 0:
+        return CommunicationExperienceAssessmentResult(
+            None,
+            model,
+            "failed",
+            result.stderr.strip() or "ollama_execution_failed",
+        )
+
+    try:
+        response = json.loads(result.stdout)
+    except (json.JSONDecodeError, TypeError):
+        return CommunicationExperienceAssessmentResult(
+            None, model, "failed", "invalid_json_response"
+        )
+
+    if not isinstance(response, dict):
+        return CommunicationExperienceAssessmentResult(
+            None, model, "failed", "invalid_response_structure"
+        )
+
+    metrics = response.get("metrics")
+    evidence = response.get("evidence")
+    confidence = response.get("assessment_confidence")
+
+    ordinal_values = {"0", "1", "2", "3", "4", "not_established"}
+
+    categorical_values = {
+        "interaction_completion": {
+            "completed",
+            "partially_completed",
+            "not_completed",
+            "not_established",
+        },
+        "goal_achievement": {
+            "achieved",
+            "partially_achieved",
+            "not_achieved",
+            "not_established",
+        },
+        "participation_disruption": {
+            "yes",
+            "no",
+            "not_established",
+        },
+        "unresolved_communication_need": {
+            "yes",
+            "no",
+            "not_established",
+        },
+    }
+
+    valid_confidence = {"low", "moderate", "high"}
+
+    if (
+        not isinstance(metrics, dict)
+        or set(metrics) != set(metric_names)
+        or any(
+            not isinstance(value, str)
+            or value not in (
+                categorical_values[key]
+                if key in categorical_values
+                else ordinal_values
+            )
+            for key, value in metrics.items()
+        )
+        or not isinstance(evidence, str)
+        or not evidence.strip()
+        or not isinstance(confidence, str)
+        or confidence not in valid_confidence
+    ):
+        return CommunicationExperienceAssessmentResult(
+            None, model, "failed", "invalid_assessment_fields"
+        )
+
+    assessment = {
+        "metrics": metrics,
+        "evidence": evidence.strip(),
+        "assessment_confidence": confidence,
+        "evidence_status": "llm_assessed_not_verified",
+        "verification_status": "not_verified",
+        "assessment_source": "local_llm",
+    }
+
+    return CommunicationExperienceAssessmentResult(
+        assessment=assessment,
+        model=model,
+        status="assessed",
     )

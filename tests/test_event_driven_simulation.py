@@ -129,6 +129,195 @@ class TestEventDrivenSimulation(unittest.TestCase):
             self.assertEqual(initiator_record["outcome"], "not_assessed")
             self.assertIsNone(recipient_record["emotional_appraisal"])
             self.assertIsNone(initiator_record["emotional_appraisal"])
+
+    @patch(
+        "src.simulation.event_driven_simulation.assess_communication_experience"
+    )
+    def test_records_separate_experience_assessments(
+        self,
+        mock_assess,
+    ):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            relationship = SimpleNamespace(
+                status="active",
+                agent_id="PERSON-001",
+                contact_id="PERSON-002",
+            )
+
+            experiment = SimpleNamespace(
+                agents=[],
+                relationships=[relationship],
+                random_seed=42,
+            )
+
+            simulation = EventDrivenSimulation(
+                experiment,
+                start_time=datetime(2026, 1, 1),
+                memory_path=Path(temp_dir) / "memory.db",
+            )
+
+            simulation.current_time = datetime(2026, 3, 1)
+
+            initiation = SimpleNamespace(
+                event_id="EVENT-000001",
+                communication=CommunicationEvent(
+                    speaker_id="PERSON-001",
+                    listener_id="PERSON-002",
+                    intended_message="Could you help me?",
+                    perceived_message="Could you assist?",
+                    listener_interpretation="They are asking for help.",
+                ),
+            )
+
+            response = SimpleNamespace(
+                communication=CommunicationEvent(
+                    speaker_id="PERSON-002",
+                    listener_id="PERSON-001",
+                    intended_message="Of course.",
+                    perceived_message="They will help.",
+                    listener_interpretation="They are offering help.",
+                ),
+            )
+
+            simulation.build_agent_context = lambda *args: {
+                "participant": args[0]
+            }
+
+            mock_assess.side_effect = [
+                SimpleNamespace(
+                    assessment={"metrics": {"frustration": "not_established"}},
+                    model="test-model",
+                    status="assessed",
+                    error=None,
+                ),
+                SimpleNamespace(
+                    assessment={"metrics": {"frustration": "0"}},
+                    model="test-model",
+                    status="assessed",
+                    error=None,
+                ),
+            ]
+
+            simulation.record_interaction_memories(
+                initiation,
+                response,
+            )
+
+            recipient_record = simulation.memory.get_history(
+                "PERSON-002"
+            )[0]
+            initiator_record = simulation.memory.get_history(
+                "PERSON-001"
+            )[0]
+
+            recipient_assessment = recipient_record[
+                "additional_details"
+            ]["experience_assessment"]
+
+            initiator_assessment = initiator_record[
+                "additional_details"
+            ]["experience_assessment"]
+
+            self.assertEqual(mock_assess.call_count, 2)
+            self.assertEqual(
+                mock_assess.call_args_list[0].kwargs["participant_id"],
+                "PERSON-002",
+            )
+            self.assertEqual(
+                mock_assess.call_args_list[1].kwargs["participant_id"],
+                "PERSON-001",
+            )
+            self.assertEqual(
+                recipient_assessment["assessment"]["metrics"]["frustration"],
+                "not_established",
+            )
+            self.assertEqual(
+                initiator_assessment["assessment"]["metrics"]["frustration"],
+                "0",
+            )
+
+    @patch(
+        "src.simulation.event_driven_simulation.assess_communication_experience"
+    )
+    def test_assessment_failure_does_not_block_other_participant(
+        self,
+        mock_assess,
+    ):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            relationship = SimpleNamespace(
+                status="active",
+                agent_id="PERSON-001",
+                contact_id="PERSON-002",
+            )
+
+            experiment = SimpleNamespace(
+                agents=[],
+                relationships=[relationship],
+                random_seed=42,
+            )
+
+            simulation = EventDrivenSimulation(
+                experiment,
+                start_time=datetime(2026, 1, 1),
+                memory_path=Path(temp_dir) / "memory.db",
+            )
+
+            simulation.current_time = datetime(2026, 3, 1)
+
+            initiation = SimpleNamespace(
+                event_id="EVENT-000002",
+                communication=CommunicationEvent(
+                    speaker_id="PERSON-001",
+                    listener_id="PERSON-002",
+                    intended_message="Hello.",
+                    perceived_message="Hello.",
+                    listener_interpretation="A greeting.",
+                ),
+            )
+
+            simulation.build_agent_context = lambda *args: {
+                "participant": args[0]
+            }
+
+            mock_assess.side_effect = [
+                RuntimeError("assessment failed"),
+                SimpleNamespace(
+                    assessment={"metrics": {"frustration": "0"}},
+                    model="test-model",
+                    status="assessed",
+                    error=None,
+                ),
+            ]
+
+            simulation.record_interaction_memories(initiation)
+
+            recipient_record = simulation.memory.get_history(
+                "PERSON-002"
+            )[0]
+            initiator_record = simulation.memory.get_history(
+                "PERSON-001"
+            )[0]
+
+            recipient_assessment = recipient_record[
+                "additional_details"
+            ]["experience_assessment"]
+
+            initiator_assessment = initiator_record[
+                "additional_details"
+            ]["experience_assessment"]
+
+            self.assertEqual(mock_assess.call_count, 2)
+            self.assertEqual(recipient_assessment["status"], "failed")
+            self.assertEqual(
+                recipient_assessment["error"],
+                "assessment failed",
+            )
+            self.assertEqual(initiator_assessment["status"], "assessed")
+            self.assertEqual(
+                initiator_assessment["assessment"]["metrics"]["frustration"],
+                "0",
+            )
+
     def test_communication_environment_is_reproducible(self):
         first = EventDrivenSimulation(self.experiment)
         second = EventDrivenSimulation(self.experiment)
@@ -566,7 +755,7 @@ class TestEventDrivenSimulation(unittest.TestCase):
         self.assertIsNone(event)
         self.assertEqual(len(simulation.events), 0)
         self.assertEqual(simulation.next_event_id, 1)
-    
+
     @patch("src.simulation.event_driven_simulation.choose_action")
     def test_response_decision_uses_recipient_and_reciprocal_relationship(
         self, mock_choose
@@ -743,7 +932,7 @@ class TestEventDrivenSimulation(unittest.TestCase):
         self.assertEqual(
             first_result["decision"]["action"],
             second_result["decision"]["action"],
-        )    
+        )
 
     @patch("src.simulation.event_driven_simulation.interpret_recipient_message")
     @patch("src.simulation.event_driven_simulation.choose_action")
@@ -1045,7 +1234,7 @@ class TestEventDrivenSimulation(unittest.TestCase):
         events = simulation.run_interaction_cycle()
 
         self.assertEqual(events, [initiation, response])
-    
+
     def test_initialises_one_scheduled_opportunity_per_relationship(self):
         relationships = [
             SocialRelationship(
@@ -1087,7 +1276,7 @@ class TestEventDrivenSimulation(unittest.TestCase):
             schedule[("PERSON-001", "PERSON-002")],
             simulation.current_time,
         )
-        
+
     def test_returns_earliest_scheduled_opportunity(self):
         simulation = EventDrivenSimulation(self.experiment)
 
@@ -1105,7 +1294,7 @@ class TestEventDrivenSimulation(unittest.TestCase):
             result,
             (second_pair, datetime(2026, 1, 3)),
         )
-        
+
     @patch.object(EventDrivenSimulation, "run_interaction_cycle")
     def test_processes_next_scheduled_opportunity(self, mock_cycle):
         relationship = SocialRelationship(

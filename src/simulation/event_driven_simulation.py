@@ -8,6 +8,7 @@ from src.behaviour.decision_model import choose_action
 from src.behaviour.llm_interpreter import (
     generate_message,
     interpret_recipient_message,
+    assess_communication_experience,
 )
 from src.behaviour.communication_model import (
     CommunicationEvent,
@@ -748,6 +749,129 @@ class EventDrivenSimulation:
             else None
         )
 
+        relationship = next(
+            (
+                item for item in self.relationships
+                if item.status == "active"
+                and (
+                    (
+                        item.agent_id == initiator_id
+                        and item.contact_id == recipient_id
+                    )
+                    or (
+                        item.agent_id == recipient_id
+                        and item.contact_id == initiator_id
+                    )
+                )
+            ),
+            None,
+        )
+
+        interaction = {
+            "interaction_id": interaction_id,
+            "initiating_message": {
+                "speaker_id": initial.speaker_id,
+                "listener_id": initial.listener_id,
+                "intended_message": initial.intended_message,
+                "perceived_message": initial.perceived_message,
+                "interpretation": initial.listener_interpretation,
+                "initial_outcome": initial.initial_outcome,
+                "final_outcome": initial.final_outcome,
+                "environment": {
+                    "background_noise": (
+                        initial.environment.background_noise
+                    ),
+                    "distance_metres": (
+                        initial.environment.distance_metres
+                    ),
+                    "speaker_face_visible": (
+                        initial.environment.speaker_face_visible
+                    ),
+                    "written_information_available": (
+                        initial.environment.written_information_available
+                    ),
+                    "message_clarity": (
+                        initial.environment.message_clarity
+                    ),
+                },
+            },
+            "response": (
+                {
+                    "occurred": True,
+                    "speaker_id": response.speaker_id,
+                    "listener_id": response.listener_id,
+                    "intended_message": response.intended_message,
+                    "perceived_message": response.perceived_message,
+                    "interpretation": response.listener_interpretation,
+                    "initial_outcome": response.initial_outcome,
+                    "final_outcome": response.final_outcome,
+                    "environment": {
+                        "background_noise": (
+                            response.environment.background_noise
+                        ),
+                        "distance_metres": (
+                            response.environment.distance_metres
+                        ),
+                        "speaker_face_visible": (
+                            response.environment.speaker_face_visible
+                        ),
+                        "written_information_available": (
+                            response.environment.written_information_available
+                        ),
+                        "message_clarity": (
+                            response.environment.message_clarity
+                        ),
+                    },
+                }
+                if response is not None
+                else {"occurred": False}
+            ),
+        }
+
+        assessments = {}
+
+        if relationship is not None:
+            for participant_id, other_id in (
+                (recipient_id, initiator_id),
+                (initiator_id, recipient_id),
+            ):
+                try:
+                    context = self.build_agent_context(
+                        participant_id,
+                        other_id,
+                        relationship,
+                    )
+
+                    result = assess_communication_experience(
+                        participant_id=participant_id,
+                        interaction_context=context,
+                        interaction=interaction,
+                    )
+
+                    assessments[participant_id] = {
+                        "assessment": result.assessment,
+                        "model": result.model,
+                        "status": result.status,
+                        "error": result.error,
+                    }
+
+                except Exception as error:
+                    assessments[participant_id] = {
+                        "assessment": None,
+                        "model": "unknown",
+                        "status": "failed",
+                        "error": str(error),
+                    }
+
+        else:
+            for participant_id in (recipient_id, initiator_id):
+                assessments[participant_id] = {
+                    "assessment": None,
+                    "model": "unknown",
+                    "status": "failed",
+                    "error": "active_relationship_not_found",
+                }
+
         # Record the original recipient's perspective.
         self.memory.record_event(
             agent_id=recipient_id,
@@ -769,6 +893,7 @@ class EventDrivenSimulation:
                 "interpretation_evidence": (
                     "llm_interpretation_not_verified"
                 ),
+                "experience_assessment": assessments[recipient_id],
             },
         )
 
@@ -801,6 +926,7 @@ class EventDrivenSimulation:
                 "interpretation_evidence": (
                     "llm_interpretation_not_verified"
                 ),
+                "experience_assessment": assessments[initiator_id],
             },
         )
 

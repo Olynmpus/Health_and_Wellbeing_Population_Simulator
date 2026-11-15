@@ -8,6 +8,7 @@ from src.behaviour.llm_interpreter import (
     interpret_interaction,
     generate_message,
     interpret_recipient_message,
+    assess_communication_experience,
 )
 
 class TestLLMInterpreter(unittest.TestCase):
@@ -326,5 +327,212 @@ class TestLLMInterpreter(unittest.TestCase):
             "not_established",
         )
 
+class TestCommunicationExperienceAssessment(unittest.TestCase):
+
+    def valid_assessment_response(self):
+        metric_names = [
+            "communication_breakdown",
+            "understanding_difficulty",
+            "listening_effort",
+            "repetition_required",
+            "clarification_required",
+            "conversational_repair",
+            "missed_information",
+            "listening_fatigue",
+            "cognitive_fatigue",
+            "concentration_demand",
+            "frustration",
+            "disappointment",
+            "embarrassment",
+            "anxiety",
+            "stress",
+            "satisfaction",
+            "communication_confidence",
+            "willingness_to_participate",
+            "social_withdrawal",
+            "sense_of_inclusion",
+            "independence",
+            "interaction_completion",
+            "goal_achievement",
+            "participation_disruption",
+            "unresolved_communication_need",
+        ]
+
+        return {
+            "metrics": {
+                name: "not_established"
+                for name in metric_names
+            },
+            "evidence": "Insufficient evidence to assess subjective experience.",
+            "assessment_confidence": "low",
+        }
+
+    def test_valid_assessment_response(self):
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json.dumps(
+            self.valid_assessment_response()
+        )
+        mock_result.stderr = ""
+
+        with patch(
+            "src.behaviour.llm_interpreter.subprocess.run",
+            return_value=mock_result,
+        ):
+            result = assess_communication_experience(
+                "PERSON-001",
+                {"situation": "family conversation"},
+                {"messages": ["Hello", "Hi"]},
+            )
+
+        self.assertEqual(result.status, "assessed")
+        self.assertEqual(
+            result.assessment["evidence_status"],
+            "llm_assessed_not_verified",
+        )
+        self.assertEqual(
+            result.assessment["verification_status"],
+            "not_verified",
+        )
+        self.assertTrue(
+            all(
+                value == "not_established"
+                for value in result.assessment["metrics"].values()
+            )
+        )
+
+    def test_rejects_invalid_metric_value(self):
+        response = self.valid_assessment_response()
+        response["metrics"]["listening_effort"] = "extreme"
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json.dumps(response)
+        mock_result.stderr = ""
+
+        with patch(
+            "src.behaviour.llm_interpreter.subprocess.run",
+            return_value=mock_result,
+        ):
+            result = assess_communication_experience(
+                "PERSON-001",
+                {},
+                {"messages": ["Hello"]},
+            )
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(
+            result.error,
+            "invalid_assessment_fields",
+        )
+
+    def test_rejects_non_string_metric_value(self):
+        response = self.valid_assessment_response()
+        response["metrics"]["listening_effort"] = []
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json.dumps(response)
+        mock_result.stderr = ""
+
+        with patch(
+            "src.behaviour.llm_interpreter.subprocess.run",
+            return_value=mock_result,
+        ):
+            result = assess_communication_experience(
+                "PERSON-001",
+                {},
+                {"messages": ["Hello"]},
+            )
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(
+            result.error,
+            "invalid_assessment_fields",
+        )
+
+    def test_accepts_categorical_outcome_values(self):
+        response = self.valid_assessment_response()
+        response["metrics"].update({
+            "interaction_completion": "partially_completed",
+            "goal_achievement": "achieved",
+            "participation_disruption": "yes",
+            "unresolved_communication_need": "no",
+        })
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json.dumps(response)
+        mock_result.stderr = ""
+
+        with patch(
+            "src.behaviour.llm_interpreter.subprocess.run",
+            return_value=mock_result,
+        ):
+            result = assess_communication_experience(
+                "PERSON-001",
+                {},
+                {"messages": ["Hello"]},
+            )
+
+        self.assertEqual(result.status, "assessed")
+
+    def test_rejects_ordinal_value_for_categorical_outcome(self):
+        response = self.valid_assessment_response()
+        response["metrics"]["interaction_completion"] = "2"
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json.dumps(response)
+        mock_result.stderr = ""
+
+        with patch(
+            "src.behaviour.llm_interpreter.subprocess.run",
+            return_value=mock_result,
+        ):
+            result = assess_communication_experience(
+                "PERSON-001",
+                {},
+                {"messages": ["Hello"]},
+            )
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(
+            result.error,
+            "invalid_assessment_fields",
+        )
+
+    def test_handles_invalid_json(self):
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "not valid json"
+        mock_result.stderr = ""
+
+        with patch(
+            "src.behaviour.llm_interpreter.subprocess.run",
+            return_value=mock_result,
+        ):
+            result = assess_communication_experience(
+                "PERSON-001",
+                {},
+                {"messages": ["Hello"]},
+            )
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.error, "invalid_json_response")
+
+    def test_handles_timeout(self):
+        with patch(
+            "src.behaviour.llm_interpreter.subprocess.run",
+            side_effect=subprocess.TimeoutExpired("ollama", 60),
+        ):
+            result = assess_communication_experience(
+                "PERSON-001",
+                {},
+                {"messages": ["Hello"]},
+            )
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.error, "timeout")
 if __name__ == "__main__":
     unittest.main()
