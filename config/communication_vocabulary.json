@@ -1,6 +1,6 @@
 {
-    "vocabulary_id": "AUS_HH_COMM_VOCAB",
-    "title": "Australian Hearing Health Population Simulator — Communication Vocabulary",
+    "vocabulary_id": "HWPS_COMM_VOCAB",
+    "title": "Communication Vocabulary",
     "version": "0.1.0",
     "status": "draft_for_review",
     "language": "en-AU",
@@ -8,7 +8,7 @@
     "scope_note": "This is a project vocabulary for research modelling. It is not a clinical coding system, diagnostic taxonomy, validated psychometric instrument, prevalence dataset or substitute for consultation with Deaf, Deafblind and hard-of-hearing communities.",
     "design_principles": [
         "Keep preferences, capabilities, requirements, identity, environmental conditions, strategies, barriers and outcomes as distinct concepts.",
-        "Do not infer communication preference, language proficiency, identity or comprehension from audiometric hearing category, age or device use.",
+        "Do not infer communication preference, language proficiency, identity or comprehension from diagnostic category, age or technology use.",
         "Treat an unrecorded preference as unknown or not assessed, not as absence of need.",
         "Allow multiple and context-dependent communication methods.",
         "Record the person's own stated preference wherever possible.",

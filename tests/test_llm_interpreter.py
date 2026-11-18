@@ -5,6 +5,7 @@ import math
 from unittest.mock import patch, MagicMock
 
 from src.behaviour.llm_interpreter import (
+    LLM_ASSESSMENT_METRICS,
     interpret_interaction,
     generate_message,
     interpret_recipient_message,
@@ -329,34 +330,51 @@ class TestLLMInterpreter(unittest.TestCase):
 
 class TestCommunicationExperienceAssessment(unittest.TestCase):
 
-    def valid_assessment_response(self):
-        metric_names = [
+    def test_event_metrics_are_not_assessed_by_llm(self):
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json.dumps(
+            self.valid_assessment_response()
+        )
+        mock_result.stderr = ""
+
+        with patch(
+            "src.behaviour.llm_interpreter.subprocess.run",
+            return_value=mock_result,
+        ) as mock_run:
+            result = assess_communication_experience(
+                "PERSON-001",
+                {"situation": "family conversation"},
+                {"messages": ["Hello", "Hi"]},
+            )
+
+        self.assertEqual(result.status, "assessed")
+
+        for metric in (
             "communication_breakdown",
             "understanding_difficulty",
-            "listening_effort",
             "repetition_required",
             "clarification_required",
             "conversational_repair",
             "missed_information",
-            "listening_fatigue",
-            "cognitive_fatigue",
             "concentration_demand",
-            "frustration",
-            "disappointment",
-            "embarrassment",
-            "anxiety",
-            "stress",
-            "satisfaction",
-            "communication_confidence",
-            "willingness_to_participate",
-            "social_withdrawal",
-            "sense_of_inclusion",
-            "independence",
-            "interaction_completion",
-            "goal_achievement",
-            "participation_disruption",
-            "unresolved_communication_need",
-        ]
+        ):
+            self.assertEqual(
+                result.assessment["metrics"][metric],
+                "not_established",
+            )
+
+        prompt = mock_run.call_args.args[0][-1]
+
+        for metric in (
+            "communication_breakdown",
+            "repetition_required",
+            "missed_information",
+        ):
+            self.assertNotIn(metric, prompt)
+            
+    def valid_assessment_response(self):
+        metric_names = list(LLM_ASSESSMENT_METRICS)
 
         return {
             "metrics": {

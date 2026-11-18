@@ -1,30 +1,32 @@
-# Hearing Health Population Simulator
+# Health and Wellbeing Population Simulator
 
-A configurable, agent-based simulation project for exploring hearing health, communication experiences, access to hearing support, healthcare services, funding arrangements and individual care pathways.
+A configurable, agent-based simulation framework for exploring how people interact, communicate, experience health and wellbeing needs, seek support, and navigate services over time.
 
 ## Overview
 
-The Hearing Health Population Simulator is a research, educational and scenario-exploration project. It uses synthetic individuals (agents) to explore how personal circumstances, hearing and communication experiences, access to support, service availability, funding arrangements and interventions may interact over time.
+The Health and Wellbeing Population Simulator is a research, educational and scenario-exploration project. It uses synthetic individuals (agents) to explore how personal circumstances, communication, social relationships, health and wellbeing needs, access to services, funding arrangements and interventions may interact over time.
 
-The simulator is designed to be **country-agnostic**. Australia is the initial reference framework for developing and exploring hearing-care pathways, healthcare structures, funding concepts and service contexts. The simulated population is hypothetical; it is not a representation or estimate of Australia's actual population.
+The simulator is designed to be country-agnostic. Country profiles can provide reference settings for population characteristics, geographical contexts, healthcare systems, funding arrangements, service capacity and policy environments.
 
-Country-specific configurations can be developed to represent different population characteristics, geographical settings, healthcare systems, funding arrangements, service capacities and policy environments.
+Simulated populations are hypothetical. They are not representations or estimates of actual populations unless a model has been explicitly calibrated and validated for that purpose.
 
 The project aims to support structured exploration of questions such as:
 
-- How might geographical barriers affect access to hearing assessment and support?
-- How might service capacity, workforce availability and operational costs influence service delivery?
-- How do communication difficulties affect individual experiences and relationships?
-- How might funding arrangements and personal contributions influence access to care?
-- How could changes to technology, services, campaigns or policy affect individual hearing-care pathways?
-- How might outcomes differ between population groups and geographical settings?
+- How do individual circumstances and experiences influence communication and interaction?
+- How might communication barriers affect relationships, participation and access to support?
+- How do people recognise needs, seek help and navigate available services?
+- How might geographical barriers, workforce availability and service capacity affect access?
+- How do funding arrangements and personal contributions influence access to care?
+- How could changes to services, technology, community support or policy affect individual and population outcomes?
+- How might outcomes differ across population groups and geographical settings?
 
 The project is under active development.
-## Architecture overview
 
-The architecture below illustrates the intended direction of the Hearing Health Population Simulator: individual agents communicate, interpret experiences from their own perspectives, develop relationships and memories, and contribute to population-level patterns over time.
+## Foundational model: communication and human interaction
 
-![Hearing Health Population Simulator Architecture Overview](documentation/Hearing%20Health%20Simulator%20Architecture%20Overview.png)
+Communication and human interaction provide a foundation for modelling how individuals exchange information, interpret events, respond to other people and develop experiences over time.
+
+The model treats each agent as an individual with its own circumstances, state, history, perspective and decision-making processes.
 
 ### Agent interaction cycle
 
@@ -53,65 +55,81 @@ Each agent maintains an individual interaction history. The memory model disting
 
 Participants do not share a single interpretation of an interaction. Each agent's record represents its own perspective.
 
-Social relationships are represented separately from individual memories. The longer-term model is intended to explore how repeated interactions and experiences may influence relationships, create new connections and change the structure of social support networks over time.
+Social relationships are represented separately from individual memories. The longer-term model is intended to explore how repeated interactions and experiences may influence relationships, create new connections and change social support networks over time.
 
-### Population-level simulation and development status
+### From individual experiences to population outcomes
 
-The simulation is intended to connect individual communication experiences with broader population patterns, including help-seeking, service access, hearing health outcomes and social participation.
+The intended model connects individual experiences and decisions with broader population patterns, including:
 
-The architecture diagram includes both implemented capabilities and planned development. In particular:
+- Health and wellbeing needs
+- Communication and social participation
+- Help-seeking and support-seeking behaviour
+- Access to services and interventions
+- Service availability and workforce capacity
+- Funding and affordability
+- Individual and population-level outcomes
+
+These areas represent the broader direction of development. Existing implementation and future extensions must remain clearly distinguished.
 
 **Implemented foundations**
-- Agent profiles and individual state representations
+
+- Synthetic population and individual agent profiles
+- Individual state and memory representations
 - Independent interaction and response decisions
 - Local LLM message generation and recipient interpretation
 - Event-driven interaction recording
 - Separate memory records for each participant
-- Existing population, service and intervention modelling components
+- Population, service, funding and intervention modelling components
 
 **Further development**
+
 - Evidence-based assessment of individual communication experiences
 - Validated emotional and experiential responses
 - Controlled updates to agent states and relationship attributes
 - Dynamic social network growth and change
-- Longitudinal analysis of communication, help-seeking and population outcomes
+- More general health and wellbeing needs and support pathways
+- Longitudinal analysis of help-seeking, service access and population outcomes
 - Feedback between simulation findings and intervention scenarios
 
-These capabilities will be developed incrementally. The architecture represents the intended integrated model, not a claim that every component is currently operational.
+These capabilities will be developed incrementally. The intended architecture is broader than the currently implemented model.
 
 ## Research and modelling principles
 
 The simulator follows several important principles.
 
-### Hearing-aid ownership is not a measure of successful hearing care
+### Individual needs, support and outcomes are distinct
 
-The model distinguishes between:
+The model should distinguish between:
 
-- Access to hearing assessment and services
-- Suitability of available support
-- Acquisition of hearing devices or other support
-- Actual use of support
+- Recognition or identification of a need
+- An individual's preferences and goals
+- Eligibility for available support
+- Access to assessment and services
+- Suitability of recommended support
+- Acceptance or decline of support
+- Acquisition or receipt of support
+- Actual use and engagement
 - Functional effectiveness
 - Individual satisfaction
 - Longer-term individual outcomes
 
-Ownership does not automatically imply use or benefit. Similarly, not owning a hearing aid does not necessarily mean that an individual has received unsuccessful care.
+Access does not automatically imply that support is appropriate or effective. Receiving support does not automatically mean that it is used or beneficial.
 
-### Hearing ability and functional communication are distinct
+### Communication is not determined by a single personal characteristic
 
-A hearing profile alone does not determine an individual's communication experience.
+An individual's communication experience cannot be reliably inferred from one characteristic or classification.
 
-People with normal audiometric profiles may still report functional hearing or communication difficulties. The simulator therefore distinguishes hearing profiles from reported and confirmed functional difficulties.
-
-Functional difficulty should not automatically be interpreted as a specific clinical diagnosis.
+The model should distinguish personal preferences, capabilities, requirements, environmental conditions, observed events and reported experiences.
 
 ### Unknown information remains unknown
 
-Missing information is not automatically interpreted as a negative outcome or absence of difficulty.
+Missing information is not automatically interpreted as a negative outcome or absence of need.
+
+The model should distinguish between information that is known, unknown, not assessed, not applicable or declined.
 
 ### Evidence and assumptions are distinguished
 
-Model information is classified using evidence-status concepts, including:
+Model information and relationships should be classified using evidence-status concepts, including:
 
 - Evidence-supported
 - Simulation assumption
@@ -119,28 +137,32 @@ Model information is classified using evidence-status concepts, including:
 
 Synthetic population characteristics and illustrative assumptions must not be interpreted as measured population estimates.
 
+### Individual and population outcomes remain distinct
+
+Population-level patterns should not be used to assume an individual's needs, preferences, experiences or outcomes. Individual records and aggregate results must preserve their respective evidence and limitations.
+
 ## Country configuration
 
-The simulator includes an initial country-profile configuration layer.
+The project includes an initial country-profile configuration layer.
 
 The initial reference profile is:
 
 `config/countries/australia_reference.json`
 
-It identifies Australia as the initial reference country and records basic configuration information, including:
+It records basic configuration information, including:
 
 - Country identity and profile type
 - Evidence status
 - Currency
-- Healthcare funding pathways
+- Funding pathways
 - Geographic service contexts
 - Configuration notes
 
 The country profile is currently loaded by the population experiment runner and its identifying information is included in the experiment summary.
 
-**Important:** The initial country profile is a foundation for future country configurability. It does not yet control every population, funding, policy or service-delivery parameter. Country-specific rules and assumptions require further implementation and evidence.
+**Important:** The country profile is a foundation for future configurability. It does not yet control every population, funding, policy or service-delivery parameter. Country-specific rules and assumptions require further implementation and evidence.
 
-Australian reference information, country-specific evidence and simulation assumptions must remain distinguishable.
+Country-specific evidence and simulation assumptions must remain distinguishable.
 
 ## Main components
 
@@ -148,9 +170,9 @@ Australian reference information, country-specific evidence and simulation assum
 |---|---|
 | Population | Generates synthetic individuals and integrates population records. |
 | Agents | Represents individual profiles, states, relationships and memory. |
-| Communication | Models communication environments, events and communication experiences. |
-| Behaviour | Represents individual experiences and relationship changes. |
-| Hearing support | Models support needs, funding arrangements, service access and care journeys. |
+| Communication | Models communication environments, events and interaction experiences. |
+| Behaviour | Represents individual decisions, experiences and relationship changes. |
+| Support pathways | Represents support needs, funding arrangements, service access and individual pathways. |
 | Service capacity | Represents workforce, geographical access, costs, funding and operational capacity. |
 | Service delivery | Models service demand, allocation, assessment and delivery. |
 | Interventions | Loads and represents configurable interventions. |
@@ -159,7 +181,7 @@ Australian reference information, country-specific evidence and simulation assum
 
 ## Optional local language-model integration
 
-The project includes an experimental local LLM communication interpretation module.
+The project includes an experimental local LLM module for communication generation and interpretation.
 
 It uses Ollama to access a locally installed language model.
 
@@ -174,7 +196,7 @@ Current characteristics:
 
 The LLM integration is experimental. Structurally valid model output should not be interpreted as factually or clinically validated.
 
-The longer-term architecture keeps language interpretation separate from authoritative simulation logic. AI may assist with interpreting questions and explaining results, but it must not invent simulation outcomes or silently change model parameters.
+Language interpretation remains separate from authoritative simulation logic. AI may assist with interpreting messages and explaining results, but it must not invent simulation outcomes or silently change model parameters.
 
 ## Technology
 
@@ -183,51 +205,38 @@ The longer-term architecture keeps language interpretation separate from authori
 - `pytest` for automated testing
 - Ollama for optional local language-model experimentation
 
-The project uses Python modules for its simulation logic. `pytest` is required to run the automated test suite. Additional dependencies may be required as reporting, analysis and other capabilities develop.
-
 ## Project structure
 
 ```text
-Hearing_Health_Population_Simulator/
-│
+Health_and_Wellbeing_Population_Simulator/
 ├── config/
 │   ├── countries/
-│   │   └── australia_reference.json
-│   ├── HH-EXP-001.json
-│   ├── communication_vocabulary.json
-│   └── population_baseline.synthetic.json
-│
+│   ├── interventions/
+│   └── population and experiment configurations
+├── dashboard/
 ├── documentation/
-│   ├── communication_vocabulary.md
-│   ├── hearing_support_and_funding_model.md
-│   └── Hearing Support Access and Individual.docx
-││  ├── Hearing Health Simulator Architecture Overview.png
 ├── outputs/
-│   └── SQLite simulation databases
-│
 ├── src/
 │   ├── agents/
 │   ├── behaviour/
 │   ├── communication/
-│   ├── hearing_support/
 │   ├── interventions/
 │   ├── population/
 │   ├── service_capacity/
 │   ├── service_delivery/
-│   ├── simulation/
-│   └── country_config.py
-│
+│   └── simulation/
 └── tests/
-    └── Automated test suite
 ```
+
+The source tree contains additional implementation modules and domain-specific components that will be generalised incrementally.
 
 ## Installation
 
 Clone the repository:
 
 ```bash
-git clone git@github.com:Olynmpus/Hearing_Health_Population_Simulator.git
-cd Hearing_Health_Population_Simulator
+git clone git@github.com:Olynmpus/Health_and_Wellbeing_Population_Simulator.git
+cd Health_and_Wellbeing_Population_Simulator
 ```
 
 Create a virtual environment:
@@ -256,7 +265,7 @@ From the project root:
 python -m pytest -q
 ```
 
-The automated test suite covers population generation, agents, communication, relationships, hearing support, funding, service access, service capacity, service delivery, interventions, country configuration and simulation integration.
+The automated test suite covers population generation, agents, communication, relationships, support pathways, funding, service access, service capacity, service delivery, interventions, country configuration and simulation integration.
 
 ## Running the longitudinal demonstration
 
@@ -274,55 +283,6 @@ outputs/HH-EXP-001-longitudinal-demo-v2.db
 
 The application protects existing databases and stops if the selected output database already exists. Use a new output path when running another experiment rather than overwriting previous results.
 
-## Current development status
+## Development status
 
-The project is actively evolving.
-
-Current implementation areas include:
-
-- Synthetic population generation
-- Individual agent profiles and state
-- Communication events and participant perspectives
-- Relationships and individual memory histories
-- Hearing support needs and individual support records
-- Funding and service access representation
-- Service capacity and delivery modelling
-- Longitudinal simulation
-- Population experiment execution
-- Initial country-profile loading and validation
-- Optional local LLM communication interpretation
-
-Further development is required to operationalise country-specific configurations, calibrate assumptions against appropriate evidence, validate model behaviour and establish the suitability of different scenarios for research or policy exploration.
-
-## Limitations
-
-This project is not currently:
-
-- A calibrated representation of the Australian population or any other country's population.
-- A validated epidemiological or clinical prediction model.
-- A clinical diagnostic or treatment recommendation system.
-- A complete implementation of country-specific healthcare funding, eligibility or policy rules.
-- Evidence that a particular policy or intervention will produce a specific real-world outcome.
-
-Simulation outputs depend on the assumptions, parameters and mechanisms implemented in the model. Results should be interpreted as exploratory outputs rather than predictions of actual population or hearing-health outcomes.
-
-## Research direction
-
-The longer-term objective is to develop an interactive educational and scenario-exploration platform.
-
-Users should be able to describe hearing-health scenarios in ordinary language, explore controlled baseline and intervention simulations, and examine the resulting changes alongside assumptions, uncertainty, limitations and potential unintended consequences.
-
-The intended workflow is:
-
-1. Interpret a user's scenario or question.
-2. Translate it into explicit, validated model parameters.
-3. Run a controlled baseline simulation.
-4. Run the proposed intervention or alternative scenario.
-5. Compare the resulting simulation outputs.
-6. Explain the results, assumptions, uncertainty and limitations.
-
-AI may assist with interpreting questions and explaining results. The underlying Python simulation remains responsible for generating authoritative model outcomes.
-
-## Licence
-
-No licence has currently been specified for this repository.
+The project is actively evolving. The current implementation provides population, service and interaction foundations. Broader health and wellbeing domains, evidence-based experience assessment and integrated longitudinal outcomes remain areas for further development.

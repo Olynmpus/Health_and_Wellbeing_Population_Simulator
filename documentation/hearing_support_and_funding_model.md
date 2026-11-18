@@ -1,279 +1,286 @@
-# Hearing Support, Access and Individual Outcomes
+# Health and Wellbeing Support, Access and Individual Outcomes
 
-**Project:** Australian Hearing Health Population Simulator
+**Project:** Health and Wellbeing Population Simulator
 **Document status:** Initial research specification — draft
-**Scope:** Public and private hearing-care pathways
+**Scope:** General health and wellbeing support, service access, funding and individual outcomes
 
 ## 1. Core research principle
 
-The simulator must never equate hearing-aid ownership with successful hearing care.
+The simulator must not equate access to, receipt of, or engagement with a service or intervention with successful health and wellbeing outcomes.
 
-Successful hearing care is evaluated by whether individuals can access appropriate support, whether that support meets their needs and preferences, and whether it produces meaningful outcomes that matter to them.
+Success must be considered in relation to whether individuals can access appropriate support, whether that support is suitable for their circumstances and preferences, and whether it produces meaningful outcomes that matter to them.
 
-Hearing-aid ownership is an intermediate event, not an outcome measure of successful care.
+Receiving a service or obtaining a support resource is an intermediate event, not proof of benefit.
 
 The simulator must not assume that:
-- Owning a hearing aid means the person uses it.
-- Using a hearing aid means the person benefits from it.
-- More frequent use necessarily produces greater benefit.
-- A more expensive or advanced device necessarily produces better outcomes.
-- People who do not use hearing aids have unsuccessful hearing care.
-- Hearing aids are appropriate or preferred for every person with hearing difficulties.
+- Identifying a need means an individual will seek help.
+- Seeking help means appropriate services are accessible.
+- Eligibility for funding means support is affordable or available.
+- Receiving a service means the support is suitable.
+- Starting or continuing an intervention means the individual benefits from it.
+- More frequent or intensive use necessarily produces better outcomes.
+- A more expensive or advanced intervention necessarily produces better outcomes.
+- People who decline, discontinue or do not use a service have failed or are non-compliant.
+- One type of support is appropriate for everyone with a similar identified need.
 
-## 2. Separate dimensions of hearing care
+## 2. Separate dimensions of support and care
 
-The simulation must represent the following dimensions independently.
+The simulation should represent the following dimensions independently. Their relevance and specific variables will depend on the type of need, service or intervention being modelled.
 
-### 2.1 Access to hearing care
+### 2.1 Need, recognition and help-seeking
 
-Whether an individual can access appropriate services.
+Represent separately:
+- A person's reported or observed needs.
+- Whether a need has been assessed or formally established.
+- Whether the person recognises or perceives a need.
+- Whether the person wants support.
+- Help-seeking intention.
+- Actions taken to seek assistance.
+- Reasons for seeking, delaying or declining support.
+
+A reported difficulty must not automatically be treated as a clinical diagnosis. Unknown, unassessed and declined information must remain distinguishable.
+
+### 2.2 Access to services and support
+
+Whether an individual can access appropriate services or resources.
 
 Variables may include:
 - Geographic availability of providers.
 - Travel distance and time.
 - Waiting time.
 - Service capacity.
-- Availability of qualified professionals.
-- Communication accessibility.
+- Availability of suitably qualified professionals.
+- Communication and other accessibility requirements.
 - Appointment availability.
-- Public or private service pathway.
+- Digital access and service delivery options.
+- Public, private or community service pathways.
+- Awareness of available services.
 
-### 2.2 Eligibility and funding
+### 2.3 Eligibility and funding
 
-Whether an individual qualifies for available financial support.
+Whether an individual qualifies for available financial or other support.
 
 Variables may include:
 - Funding pathway.
-- Eligibility status.
-- Eligibility evidence.
-- Government subsidy.
-- Private health insurance contribution.
+- Eligibility status and criteria.
+- Evidence required to establish eligibility.
+- Government or other subsidy.
+- Insurance contribution.
 - Personal financial contribution.
-- Funding restrictions.
+- Funding restrictions and service limits.
 - Policy version and effective date.
 
-### 2.3 Affordability
+Eligibility must remain separate from access and affordability. A person may qualify for support but still be unable to obtain it.
 
-Whether the individual can afford recommended care and ongoing expenses.
+### 2.4 Affordability
+
+Whether the individual can afford recommended services, interventions and ongoing expenses.
 
 Variables may include:
 - Household financial resources.
-- Device price.
+- Service or intervention cost.
 - Out-of-pocket contribution.
-- Assessment and fitting expenses.
-- Maintenance and repair expenses.
-- Battery or charging expenses.
-- Replacement costs.
+- Assessment and follow-up expenses.
+- Travel and accommodation expenses.
+- Maintenance and ongoing costs.
+- Replacement or renewal costs.
 - Financial hardship.
 
-Eligibility and affordability must remain separate. A person may qualify for a subsidy but still experience financial barriers.
+Eligibility and affordability must remain separate. A subsidy does not necessarily remove all financial barriers.
 
-### 2.4 Suitability of support
+### 2.5 Suitability of support
 
-Whether the recommended support is appropriate for the individual's circumstances.
+Whether recommended support is appropriate for the individual's circumstances.
 
 Consider:
-- Hearing profile and functional listening needs.
-- Communication preferences.
-- Personal goals.
-- Lifestyle and listening environments.
-- Dexterity and usability requirements.
-- Comfort and physical fit.
-- Technology preferences.
+- Identified needs and relevant assessment findings.
+- Personal goals and preferences.
+- Existing capabilities and support.
+- Living, working and social circumstances.
+- Accessibility and usability requirements.
 - Cultural and communication considerations.
+- Practical constraints.
+- Risks, limitations and potential burdens.
 - Alternative or complementary support options.
 
-A hearing aid must not be automatically recommended solely because an individual has a hearing-loss classification.
+A diagnosis, demographic category or risk classification must not automatically determine which intervention is appropriate. Suitability depends on the individual and the type of support being considered.
 
-### 2.5 Acquisition and fitting
+### 2.6 Decision and commencement
 
-Whether the individual obtains and receives the recommended support.
+Whether the individual decides to proceed with recommended support and whether it is actually provided.
 
 Record separately:
-- Recommended support.
-- Support accepted or declined.
-- Acquisition status.
-- Device type.
-- Fitting status.
-- Fitting date.
-- Initial adjustment.
+- Recommended service or intervention.
+- Support accepted, declined or deferred.
+- Reason for the decision, where known.
+- Referral and booking status.
+- Service commencement or resource acquisition.
+- Intervention type and provider.
+- Commencement date.
+- Initial adjustment or implementation.
 - Follow-up availability.
 
-### 2.6 Usage and adoption
+A recommendation, referral, purchase or booking must not be treated as confirmation that support was received.
 
-Whether and how the individual chooses to use the support.
+### 2.7 Engagement and continued use
+
+Whether and how the individual chooses or is able to engage with the support.
 
 Variables may include:
-- Usage frequency.
-- Approximate daily usage duration.
-- Listening situations.
-- Comfort.
-- Usability.
-- Reasons for reduced use.
+- Attendance and participation.
+- Frequency and duration of engagement.
+- Contexts in which support is used.
+- Accessibility and usability.
+- Perceived value and burden.
+- Practical barriers.
+- Reasons for reduced engagement.
 - Reasons for discontinuation.
-- Device reliability.
-- Maintenance difficulties.
+- Changes in preference or circumstances.
 
-Non-use must not automatically be classified as failure or non-compliance.
+Non-use, missed appointments or discontinuation must not automatically be classified as failure or non-compliance. The reasons and circumstances should be represented where evidence is available.
 
-### 2.7 Functional effectiveness
+### 2.8 Effectiveness and individual benefit
 
 Whether the support produces meaningful benefits for the individual.
 
-Potential outcomes include:
-- Speech understanding in quiet.
-- Speech understanding in noise.
-- Listening effort.
-- Communication confidence.
-- Understanding in social environments.
-- Workplace communication.
-- Family communication.
-- Perceived listening benefit.
+Potential outcomes depend on the domain and may include:
+- Changes in relevant functional abilities.
+- Symptom or difficulty changes.
+- Physical and psychological functioning.
+- Communication and participation.
+- Confidence and independence.
+- Daily activity and quality of life.
+- Social connection and participation.
+- Progress towards individual goals.
+- Adverse effects or unintended consequences.
+
+Effectiveness must be evaluated independently of service receipt, intervention ownership and engagement.
+
+A measured change must not automatically be attributed to an intervention without considering other relevant influences and the strength of the evidence.
+
+### 2.9 Satisfaction and longer-term outcomes
+
+Record separately:
+- Satisfaction with services and providers.
+- Satisfaction with the support received.
+- Perceived value and burden.
 - Individual goal achievement.
+- Continued benefit or changing needs.
+- Longer-term functioning and wellbeing.
+- Participation and independence.
+- Ongoing access to support.
+- Changes in support requirements.
+- Continued engagement or discontinuation.
 
-Effectiveness must be evaluated independently of device ownership and usage.
+Objective measures, observed events and subjective experiences must remain distinguishable.
 
-### 2.8 Satisfaction and longer-term outcomes
+## 3. Types of support and intervention
 
-Record:
-- Satisfaction with services.
-- Satisfaction with the recommended support.
-- Perceived value.
-- Communication participation.
-- Social participation.
-- Independence.
-- Perceived support.
-- Continued use or discontinuation.
-- Ongoing access to care.
-
-Objective participation measures and subjective experiences must remain distinguishable.
-
-## 3. Hearing-support options
-
-The simulator must support multiple forms of hearing and communication support.
+The simulator should be capable of representing different forms of support, depending on the domain being studied.
 
 Examples include:
-- Hearing aids.
-- Cochlear implants.
-- Bone-conduction devices.
-- Assistive listening devices.
-- Remote microphone systems.
-- Captioning.
-- Auslan and other signed-language communication.
-- Communication strategies.
+- Assessment and monitoring.
+- Preventive services.
+- Clinical treatment.
+- Rehabilitation and therapy.
+- Medicines and other therapeutic interventions.
+- Assistive and communication technology.
+- Education and information.
+- Counselling and psychosocial support.
+- Community-based services.
+- Social and practical support.
 - Environmental modifications.
-- Rehabilitation and counselling.
+- Digital and remote services.
 - Combined support approaches.
 - No additional intervention, where appropriate to individual preferences and circumstances.
 
-These options must not be treated as interchangeable. Suitability depends on individual circumstances and clinical assessment.
+These options are not interchangeable. Suitability depends on individual circumstances, the nature of the need and relevant professional assessment.
 
-## 4. Public and private funding pathways
+The model must allow for multiple concurrent or sequential forms of support.
 
-The simulator must represent:
+## 4. Public, private and other funding pathways
+
+The simulator should represent funding arrangements appropriate to the country, population and service being modelled.
 
 ### Public pathways
-- Australian Government Hearing Services Program.
-- Voucher scheme.
-- Community Service Obligations.
-- Other applicable government or veteran support arrangements.
+Examples may include:
+- Government-funded services.
+- Subsidised treatment or support programs.
+- Public hospitals and community health services.
+- Disability and aged-care support arrangements.
+- Veteran-specific support.
+- Other applicable public assistance.
 
 ### Private pathways
-- Private audiology providers.
-- Private device purchases.
-- Private health insurance contributions where applicable.
-- Self-funded services.
-- Out-of-pocket upgrades and ongoing expenses.
+Examples may include:
+- Private providers.
+- Private health insurance contributions.
+- Self-funded services and interventions.
+- Out-of-pocket expenses.
+- Privately funded upgrades or additional services.
 
-### Mixed pathways
+### Community and mixed pathways
 
-Individuals may use publicly funded services alongside privately funded devices, upgrades or additional services where permitted.
+Individuals may receive support through community organisations, charitable programs, family or informal networks, or combinations of public and private services.
 
-Eligibility, availability, affordability and actual service receipt must be separate variables.
+Eligibility, availability, affordability, referral, service receipt and ongoing support must remain separate variables.
 
-Policy arrangements must be versioned and linked to their effective dates.
+Policy arrangements must be versioned and linked to their effective dates. Country-specific rules must be configured and supported by appropriate evidence rather than assumed to apply universally.
 
-## 5. Device technology and cost
+## 5. Service characteristics and cost
 
-Technology categories may include basic, intermediate and advanced features.
+Services and interventions may differ in complexity, intensity, duration, delivery method and cost.
 
-The model must distinguish:
-- Device category.
-- Technical features.
-- Purchase price.
+The model should distinguish:
+- Service or intervention type.
+- Provider and workforce requirements.
+- Technical or professional characteristics.
+- Service intensity and duration.
+- Delivery setting and method.
+- Availability and capacity.
+- Direct cost.
 - Funding contribution.
 - Out-of-pocket expense.
-- Maintenance requirements.
-- Service package.
+- Ongoing resource requirements.
 - Individual suitability.
 
-Technology tier must not independently determine effectiveness.
-
-A higher-priced device must not automatically receive a higher functional-benefit score.
+Cost, complexity or intensity must not independently determine effectiveness or individual benefit.
 
 ## 6. Individual outcome measurement
 
 The simulator must preserve the distinction between:
 
-1. Access to appropriate care.
-2. Affordability of care.
-3. Suitability of recommended support.
-4. Acquisition of support.
-5. Actual usage.
-6. Functional effectiveness.
-7. Satisfaction.
-8. Longer-term individual outcomes.
+1. Need recognition and help-seeking.
+2. Access to appropriate services and support.
+3. Eligibility and funding.
+4. Affordability.
+5. Suitability of recommended support.
+6. Decision to proceed and actual receipt.
+7. Engagement and continued use.
+8. Functional effectiveness and individual benefit.
+9. Satisfaction.
+10. Longer-term health and wellbeing outcomes.
 
 These dimensions should initially be reported separately.
 
-Do not create a single overall hearing-care success score until its construction, assumptions and validation have been explicitly justified.
+Do not create a single overall health or wellbeing success score until its construction, assumptions, weighting and validation have been explicitly justified.
+
+Outcomes should be connected to individual goals and relevant evidence. Missing information must not be interpreted as a negative outcome.
 
 ## 7. Research evidence classification
 
-All model inputs and relationships must be identified as one of:
+All model inputs, relationships and outcome measures must be identified according to their evidence status:
 
-- **Evidence-supported:** grounded in relevant research or authoritative policy documentation.
-- **Simulation assumption:** an explicitly defined provisional parameter.
-- **Not yet established:** a relationship for which adequate evidence or calibration is unavailable.
+- **Evidence-supported:** grounded in relevant research, validated measures or authoritative policy documentation.
+- **Simulation assumption:** an explicitly defined provisional parameter used for experimentation.
+- **Not yet established:** a relationship for which adequate evidence, measurement or calibration is unavailable.
 
-The simulator must not present illustrative costs, behavioural probabilities or effectiveness parameters as measured Australian population estimates.
+The simulator must not present illustrative costs, behavioural probabilities, service-use rates or effectiveness parameters as measured population estimates.
 
-## 8. Required model safeguards
+Evidence must be relevant to the population, setting, intervention and outcome being modelled. Where evidence is limited or indirect, that limitation must be recorded.
 
-The implementation must enforce these principles:
+## 8. Implementation status and development
 
-1. Device ownership does not imply device usage.
-2. Device usage does not imply functional benefit.
-3. Device price or technology tier does not imply greater effectiveness.
-4. Eligibility does not imply actual access.
-5. Access does not imply affordability.
-6. Acquisition does not imply successful fitting.
-7. Non-use does not automatically imply unsuccessful care.
-8. No hearing aid does not automatically imply absence of appropriate support.
-9. Missing outcome data must not be interpreted as a negative outcome.
-10. Individual preferences and goals must influence how support outcomes are evaluated.
+This document describes the intended modelling framework. It does not imply that every health and wellbeing domain, service pathway, funding arrangement or outcome measure is currently implemented.
 
-## 9. Future validation scenarios
-
-The simulator should eventually be tested against scenarios including:
-
-- Eligible individual unable to access a provider.
-- Eligible individual unable to afford the required contribution.
-- Private customer unable to afford an advanced device.
-- Individual receiving a basic device and achieving substantial benefit.
-- Individual receiving an advanced device but achieving limited benefit.
-- Individual using hearing aids regularly without sufficient benefit.
-- Individual using hearing aids selectively with substantial situational benefit.
-- Individual declining hearing aids but benefiting from alternative support.
-- Individual discontinuing device use due to discomfort or maintenance costs.
-- Individual receiving appropriate support but experiencing continuing communication barriers.
-
-## 10. Implementation principle
-
-The hearing-support model must integrate with the broader agent, communication, relationship, service-access and longitudinal simulation systems.
-
-Device and service events should be recorded separately from their behavioural and social consequences.
-
-Any resulting changes in communication confidence, participation, trust, loneliness or help-seeking must be governed by explicit, testable relationships.
-
-**The ultimate research objective is to investigate equitable access to appropriate hearing care and its effects on meaningful individual outcomes, not simply the distribution or ownership of hearing devices.**
+The existing implementation should be extended incrementally. New domains should retain the distinctions and evidence principles described here without assuming that one domain's variables or relationships apply universally.

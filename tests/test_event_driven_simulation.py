@@ -6,7 +6,10 @@ from pathlib import Path
 from src.agents.relationships import SocialRelationship
 from src.simulation.event_driven_simulation import EventDrivenSimulation
 from src.simulation.event_model import SimulationEvent
-from src.behaviour.communication_model import CommunicationEvent
+from src.behaviour.communication_model import (
+    CommunicationEvent,
+    CommunicationEnvironment,
+)
 
 
 from unittest.mock import patch
@@ -439,6 +442,339 @@ class TestEventDrivenSimulation(unittest.TestCase):
             profile=profile,
             state=state,
         )
+
+    @patch("src.simulation.event_driven_simulation.choose_action")
+    def test_records_clarification_request(self, mock_choose_action):
+        relationship = SocialRelationship(
+            "PERSON-002", "PERSON-001", "family"
+        )
+        experiment = SimpleNamespace(
+            agents=[
+                self.make_agent("PERSON-001"),
+                self.make_agent("PERSON-002"),
+            ],
+            relationships=[relationship],
+            random_seed=42,
+        )
+        simulation = EventDrivenSimulation(experiment)
+
+        initiation = SimulationEvent(
+            event_id="EVENT-000001",
+            timestamp=simulation.current_time,
+            event_type="communication_initiation",
+            participants=["PERSON-001", "PERSON-002"],
+            initiating_agent_id="PERSON-001",
+            action="initiate_conversation",
+            communication=CommunicationEvent(
+                speaker_id="PERSON-001",
+                listener_id="PERSON-002",
+                intended_message="Could you help me?",
+                perceived_message="Could you assist?",
+                listener_interpretation="The person is asking for help.",
+            ),
+        )
+        mock_choose_action.return_value = {
+            "action": "attempt_clarification",
+            "probabilities": {
+                "attempt_clarification": 0.7,
+                "do_nothing": 0.3,
+            },
+            "decision_basis": {},
+        }
+
+        event = simulation.make_clarification_decision(initiation)
+
+        self.assertTrue(initiation.communication.clarification_requested)
+        self.assertEqual(event.event_type, "clarification_decision")
+        self.assertEqual(event.action, "attempt_clarification")
+        self.assertIn(event, simulation.events)
+
+    @patch("src.simulation.event_driven_simulation.choose_action")
+    def test_records_no_clarification_request(self, mock_choose_action):
+        relationship = SocialRelationship(
+            "PERSON-002", "PERSON-001", "family"
+        )
+        experiment = SimpleNamespace(
+            agents=[
+                self.make_agent("PERSON-001"),
+                self.make_agent("PERSON-002"),
+            ],
+            relationships=[relationship],
+            random_seed=42,
+        )
+        simulation = EventDrivenSimulation(experiment)
+
+        initiation = SimulationEvent(
+            event_id="EVENT-000001",
+            timestamp=simulation.current_time,
+            event_type="communication_initiation",
+            participants=["PERSON-001", "PERSON-002"],
+            initiating_agent_id="PERSON-001",
+            action="initiate_conversation",
+            communication=CommunicationEvent(
+                speaker_id="PERSON-001",
+                listener_id="PERSON-002",
+                intended_message="Could you help me?",
+                perceived_message="Could you assist?",
+                listener_interpretation="The person is asking for help.",
+            ),
+        )
+        mock_choose_action.return_value = {
+            "action": "do_nothing",
+            "probabilities": {
+                "attempt_clarification": 0.3,
+                "do_nothing": 0.7,
+            },
+            "decision_basis": {},
+        }
+
+        event = simulation.make_clarification_decision(initiation)
+
+        self.assertFalse(initiation.communication.clarification_requested)
+        self.assertEqual(event.event_type, "clarification_decision")
+        self.assertEqual(event.action, "do_nothing")
+        self.assertIn(event, simulation.events)
+
+    @patch("src.simulation.event_driven_simulation.choose_action")
+    def test_records_repair_decision(self, mock_choose_action):
+        relationship = SocialRelationship(
+            "PERSON-001", "PERSON-002", "family"
+        )
+        experiment = SimpleNamespace(
+            agents=[
+                self.make_agent("PERSON-001"),
+                self.make_agent("PERSON-002"),
+            ],
+            relationships=[relationship],
+            random_seed=42,
+        )
+        simulation = EventDrivenSimulation(experiment)
+
+        initiation = SimulationEvent(
+            event_id="EVENT-000001",
+            timestamp=simulation.current_time,
+            event_type="communication_initiation",
+            participants=["PERSON-001", "PERSON-002"],
+            initiating_agent_id="PERSON-001",
+            action="initiate_conversation",
+            communication=CommunicationEvent(
+                speaker_id="PERSON-001",
+                listener_id="PERSON-002",
+                intended_message="Could you help me?",
+                perceived_message="Could you assist?",
+                listener_interpretation="The person is asking for help.",
+                clarification_requested=True,
+            ),
+        )
+        mock_choose_action.return_value = {
+            "action": "rephrase_information",
+            "probabilities": {
+                "repeat_information": 0.2,
+                "rephrase_information": 0.5,
+                "provide_written_information": 0.1,
+                "decline_repair": 0.1,
+                "do_nothing": 0.1,
+            },
+            "decision_basis": {},
+        }
+
+        event = simulation.make_repair_decision(initiation)
+
+        self.assertEqual(event.event_type, "repair_decision")
+        self.assertEqual(event.initiating_agent_id, "PERSON-001")
+        self.assertEqual(event.action, "rephrase_information")
+        self.assertIn(event, simulation.events)
+        mock_choose_action.assert_called_once()
+        self.assertEqual(
+            mock_choose_action.call_args.kwargs["context"],
+            "repair",
+        )
+
+    @patch("src.simulation.event_driven_simulation.generate_message")
+    def test_generates_repair_message(self, mock_generate):
+        relationship = SocialRelationship(
+            "PERSON-001", "PERSON-002", "family"
+        )
+        experiment = SimpleNamespace(
+            agents=[
+                self.make_agent("PERSON-001"),
+                self.make_agent("PERSON-002"),
+            ],
+            relationships=[relationship],
+            random_seed=42,
+        )
+        simulation = EventDrivenSimulation(experiment)
+
+        initiation = SimulationEvent(
+            event_id="EVENT-000001",
+            timestamp=simulation.current_time,
+            event_type="communication_initiation",
+            participants=["PERSON-001", "PERSON-002"],
+            initiating_agent_id="PERSON-001",
+            action="initiate_conversation",
+            communication=CommunicationEvent(
+                speaker_id="PERSON-001",
+                listener_id="PERSON-002",
+                intended_message="Could you help me?",
+                perceived_message="Could you assist?",
+                listener_interpretation="The person is asking for help.",
+                clarification_requested=True,
+            ),
+        )
+
+        repair = SimulationEvent(
+            event_id="EVENT-000002",
+            timestamp=simulation.current_time,
+            event_type="repair_decision",
+            participants=["PERSON-001", "PERSON-002"],
+            initiating_agent_id="PERSON-001",
+            action="rephrase_information",
+        )
+
+        mock_generate.return_value = SimpleNamespace(
+            text="Let me explain that another way.",
+            status="generated",
+            model="test-model",
+            error=None,
+        )
+
+        result = simulation.generate_repair_message(initiation, repair)
+
+        self.assertEqual(
+            result.text,
+            "Let me explain that another way.",
+        )
+        mock_generate.assert_called_once()
+
+        context = mock_generate.call_args.kwargs["interaction_context"]
+        self.assertEqual(
+            context["communication_repair"]["repair_action"],
+            "rephrase_information",
+        )
+        self.assertEqual(
+            context["communication_repair"]["original_message"],
+            "Could you help me?",
+        )
+        self.assertEqual(
+            context["communication_repair"]["interpretation_evidence"],
+            "llm_interpretation_not_verified",
+        )
+
+    @patch("src.simulation.event_driven_simulation.interpret_recipient_message")
+    @patch.object(EventDrivenSimulation, "generate_repair_message")
+    @patch.object(EventDrivenSimulation, "generate_communication_environment")
+    @patch.object(EventDrivenSimulation, "make_repair_decision")
+    def test_records_communication_repair(
+        self,
+        mock_decision,
+        mock_environment,
+        mock_generate,
+        mock_interpret,
+    ):
+        relationship = SocialRelationship(
+            "PERSON-001", "PERSON-002", "family"
+        )
+        experiment = SimpleNamespace(
+            agents=[
+                self.make_agent("PERSON-001"),
+                self.make_agent("PERSON-002"),
+            ],
+            relationships=[relationship],
+            random_seed=42,
+        )
+        simulation = EventDrivenSimulation(experiment)
+
+        initiation = SimulationEvent(
+            event_id="EVENT-000001",
+            timestamp=simulation.current_time,
+            event_type="communication_initiation",
+            participants=["PERSON-001", "PERSON-002"],
+            initiating_agent_id="PERSON-001",
+            action="initiate_conversation",
+            communication=CommunicationEvent(
+                speaker_id="PERSON-001",
+                listener_id="PERSON-002",
+                intended_message="Could you help me?",
+                perceived_message=None,
+                listener_interpretation=None,
+                clarification_requested=True,
+            ),
+        )
+
+        decision = SimulationEvent(
+            event_id="EVENT-000002",
+            timestamp=simulation.current_time,
+            event_type="repair_decision",
+            participants=["PERSON-001", "PERSON-002"],
+            initiating_agent_id="PERSON-001",
+            action="rephrase_information",
+        )
+        mock_decision.return_value = decision
+        mock_generate.return_value = SimpleNamespace(
+            text="Let me explain that another way.",
+            status="generated",
+            model="test-model",
+            error=None,
+        )
+        mock_environment.return_value = CommunicationEnvironment()
+        mock_interpret.return_value = SimpleNamespace(
+            status="interpreted",
+            perceived_message="Let me explain that again.",
+            interpretation="The speaker is explaining again.",
+            model="test-model",
+            error=None,
+        )
+
+        event = simulation.run_repair_event(initiation)
+
+        self.assertEqual(event.event_type, "communication_repair")
+        self.assertEqual(event.action, "rephrase_information")
+        self.assertEqual(
+            event.communication.intended_message,
+            "Let me explain that another way.",
+        )
+        self.assertEqual(
+            event.communication.listener_interpretation,
+            "The speaker is explaining again.",
+        )
+        self.assertEqual(
+            event.decision_basis["comprehension"],
+            "not_assessed",
+        )
+        self.assertIn(event, simulation.events)
+
+    def test_no_repair_decision_without_clarification(self):
+        experiment = SimpleNamespace(
+            agents=[
+                self.make_agent("PERSON-001"),
+                self.make_agent("PERSON-002"),
+            ],
+            relationships=[],
+            random_seed=42,
+        )
+        simulation = EventDrivenSimulation(experiment)
+
+        initiation = SimulationEvent(
+            event_id="EVENT-000001",
+            timestamp=simulation.current_time,
+            event_type="communication_initiation",
+            participants=["PERSON-001", "PERSON-002"],
+            initiating_agent_id="PERSON-001",
+            action="initiate_conversation",
+            communication=CommunicationEvent(
+                speaker_id="PERSON-001",
+                listener_id="PERSON-002",
+                intended_message="Could you help me?",
+                perceived_message=None,
+                listener_interpretation=None,
+                clarification_requested=False,
+            ),
+        )
+
+        event = simulation.make_repair_decision(initiation)
+
+        self.assertIsNone(event)
+        self.assertEqual(simulation.events, [])
 
     @patch("src.simulation.event_driven_simulation.generate_message")
     def test_generates_initiation_message(self, mock_generate):
@@ -1235,6 +1571,69 @@ class TestEventDrivenSimulation(unittest.TestCase):
 
         self.assertEqual(events, [initiation, response])
 
+    @patch.object(EventDrivenSimulation, "make_clarification_decision")
+    @patch.object(EventDrivenSimulation, "run_response_event")
+    @patch.object(
+        EventDrivenSimulation, "prepare_initiation_communication"
+    )
+    @patch.object(EventDrivenSimulation, "run_initiation_event")
+    def test_interaction_cycle_records_clarification_event(
+        self,
+        mock_initiation,
+        mock_prepare,
+        mock_response,
+        mock_clarification,
+    ):
+        simulation = EventDrivenSimulation(self.experiment)
+
+        initiation = SimulationEvent(
+            event_id="EVENT-000001",
+            timestamp=simulation.current_time,
+            event_type="communication_initiation",
+            participants=["PERSON-001", "PERSON-002"],
+            initiating_agent_id="PERSON-001",
+            action="initiate_conversation",
+            communication=CommunicationEvent(
+                speaker_id="PERSON-001",
+                listener_id="PERSON-002",
+                intended_message="Could you help me?",
+                perceived_message="Could you assist?",
+                listener_interpretation="The person is asking for help.",
+            ),
+        )
+
+        clarification = SimulationEvent(
+            event_id="EVENT-000002",
+            timestamp=simulation.current_time,
+            event_type="clarification_decision",
+            participants=["PERSON-001", "PERSON-002"],
+            initiating_agent_id="PERSON-002",
+            action="attempt_clarification",
+        )
+
+        response = SimulationEvent(
+            event_id="EVENT-000003",
+            timestamp=simulation.current_time,
+            event_type="communication_response",
+            participants=["PERSON-001", "PERSON-002"],
+            initiating_agent_id="PERSON-002",
+            action="continue_interaction",
+        )
+
+        mock_initiation.return_value = initiation
+        mock_prepare.return_value = True
+        mock_clarification.return_value = clarification
+        mock_response.return_value = response
+
+        events = simulation.run_interaction_cycle()
+
+        self.assertEqual(
+            events,
+            [initiation, clarification, response],
+        )
+        mock_clarification.assert_called_once_with(initiation)
+        mock_response.assert_called_once_with(initiation)
+        
     def test_initialises_one_scheduled_opportunity_per_relationship(self):
         relationships = [
             SocialRelationship(

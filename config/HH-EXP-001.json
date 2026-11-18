@@ -1,6 +1,6 @@
 {
     "experiment_id": "HH-EXP-001",
-    "experiment_name": "Baseline Australian Hearing Health and Help-Seeking Scenario",
+    "experiment_name": "Baseline Australian Health and Wellbeing Help-Seeking Scenario",
     "country_profile": "countries/australia_reference.json",
     "currency_conversion": {
     	"source_currency": "AUD",

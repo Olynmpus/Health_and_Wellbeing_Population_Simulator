@@ -19,7 +19,7 @@ INTERVENTION = ROOT / "config" / "interventions" / "mobile_hearing_outreach.json
 
 
 st.set_page_config(
-    page_title="Hearing Health Population Simulator",
+    page_title="Health and Wellbeing Population Simulator",
     page_icon="◉",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -476,7 +476,7 @@ def make_individual_network(agents, relationships, selected_agent_id):
 
 
 # Sidebar
-st.sidebar.markdown("## Experiment controls")
+st.sidebar.markdown("## Reference experiment controls")
 
 scenario = st.sidebar.selectbox(
     "Population scenario",
@@ -508,15 +508,21 @@ except Exception as error:
 # Header
 st.markdown("""
 <div class="hero">
-    <h1>Hearing Health Population Simulator</h1>
+    <h1>Health and Wellbeing Population Simulator</h1>
     <p>Explore population characteristics, service access, individual experiences
-    and relationships in a simulated hearing-health system.</p>
+    and relationships in a configurable population simulation.</p>
 </div>
 """, unsafe_allow_html=True)
 
 st.caption(
     f"{summary['experiment_name']} · {summary['country_name']} reference framework "
     f"· Evidence status: {summary['evidence_status']}"
+)
+
+st.info(
+    "This dashboard currently demonstrates the simulator's initial "
+    "hearing-support reference implementation. The broader health and "
+    "wellbeing model is under development."
 )
 
 overview_tab, population_explorer_tab, relationships_tab, timeline_tab, research_tab = st.tabs([
@@ -560,7 +566,7 @@ with overview_tab:
             for key, value in service["attendance"].items()
         ])
         if not attendance.empty:
-            st.dataframe(attendance, hide_index=True, use_container_width=True)
+            st.dataframe(attendance, hide_index=True, width="stretch")
 
     with delivery_right:
         st.markdown("**Delivery outcomes**")
@@ -569,7 +575,7 @@ with overview_tab:
             for key, value in service["delivery_outcomes"].items()
         ])
         if not delivery.empty:
-            st.dataframe(delivery, hide_index=True, use_container_width=True)
+            st.dataframe(delivery, hide_index=True, width="stretch")
 
     st.caption(
         "The population is hypothetical and generated from simulation "
@@ -601,7 +607,7 @@ with population_explorer_tab:
             paper_bgcolor="#0b1220", plot_bgcolor="#0b1220",
             font_color="#e5eaf3",
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     with right:
         st.markdown("#### Geographic distribution")
@@ -615,7 +621,7 @@ with population_explorer_tab:
             font_color="#e5eaf3",
             legend_title_text="Geography",
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     left, right = st.columns(2)
 
@@ -628,7 +634,7 @@ with population_explorer_tab:
             paper_bgcolor="#0b1220", plot_bgcolor="#0b1220",
             font_color="#e5eaf3",
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     with right:
         st.markdown("#### Auditory functional status")
@@ -643,7 +649,7 @@ with population_explorer_tab:
             paper_bgcolor="#0b1220", plot_bgcolor="#0b1220",
             font_color="#e5eaf3",
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
 
 # Relationships
@@ -718,7 +724,7 @@ with relationships_tab:
             population.agents,
             population.relationships,
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
         st.caption(
             f"Showing {len(population.agents):,} people across "
@@ -743,7 +749,7 @@ with relationships_tab:
         st.dataframe(
             geography_counts,
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
         )
 
     else:
@@ -758,7 +764,7 @@ with relationships_tab:
             population.relationships,
             selected_household,
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
         st.caption(
             f"{len(selected_members)} household members | "
@@ -781,7 +787,7 @@ with relationships_tab:
         st.dataframe(
             pd.DataFrame(member_rows),
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
         )
 
         st.markdown("#### Recorded family connections")
@@ -819,7 +825,7 @@ with relationships_tab:
             st.dataframe(
                 pd.DataFrame(connection_rows),
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
             )
         else:
             st.info(
@@ -850,7 +856,7 @@ with relationships_tab:
         selected_agent_id,
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     st.caption(
         f"{selected_agent_id} has {contact_count} direct contacts and "
@@ -916,7 +922,7 @@ with timeline_tab:
         plot_bgcolor="#0b1220",
         font_color="#e5eaf3",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     st.markdown("#### Recorded interactions")
 
@@ -1029,6 +1035,6 @@ with research_tab:
 st.markdown("""
 <div class="credit">
     Designed and developed by Jorge Mejia<br>
-    Hearing Health Population Simulator · Research and Experimental Platform
+    Health and Wellbeing Population Simulator · Research and Experimental Platform
 </div>
 """, unsafe_allow_html=True)

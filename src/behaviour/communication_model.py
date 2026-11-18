@@ -54,7 +54,7 @@ class CommunicationEvent:
         default_factory=CommunicationEnvironment
     )
 
-    clarification_requested: bool = False
+    clarification_requested: bool | None = None
 
     initial_outcome: str = "not_assessed"
     final_outcome: str = "not_assessed"
@@ -121,11 +121,12 @@ class CommunicationEvent:
                 f"Invalid final outcome: {self.final_outcome}"
             )
 
-        if not isinstance(self.clarification_requested, bool):
-            raise ValueError(
-                "clarification_requested must be True or False."
-            )
-
+        if self.clarification_requested is not None:
+            if not isinstance(self.clarification_requested, bool):
+                raise ValueError(
+                    "clarification_requested must be True, False or None."
+                )
+            
         if not isinstance(self.environment, CommunicationEnvironment):
             raise ValueError(
                 "Environment must be a CommunicationEnvironment object."

@@ -14,6 +14,53 @@ OLLAMA_EXECUTABLE = Path(
 DEFAULT_MODEL = "qwen3:1.7b"
 DEFAULT_TIMEOUT = 60
 
+COMMUNICATION_EVENT_AND_DEMAND_METRICS = (
+    "communication_breakdown",
+    "understanding_difficulty",
+    "repetition_required",
+    "clarification_required",
+    "conversational_repair",
+    "missed_information",
+    "concentration_demand",
+)
+
+PARTICIPANT_EXPERIENCE_METRICS = (
+    "listening_effort",
+    "listening_fatigue",
+    "cognitive_fatigue",
+    "frustration",
+    "disappointment",
+    "embarrassment",
+    "anxiety",
+    "stress",
+    "satisfaction",
+    "communication_confidence",
+    "sense_of_inclusion",
+)
+
+BEHAVIOUR_AND_PARTICIPATION_METRICS = (
+    "willingness_to_participate",
+    "social_withdrawal",
+    "participation_disruption",
+)
+
+FUNCTIONAL_AND_OUTCOME_METRICS = (
+    "independence",
+    "interaction_completion",
+    "goal_achievement",
+    "unresolved_communication_need",
+)
+
+LLM_ASSESSMENT_METRICS = (
+    PARTICIPANT_EXPERIENCE_METRICS
+    + BEHAVIOUR_AND_PARTICIPATION_METRICS
+    + FUNCTIONAL_AND_OUTCOME_METRICS
+)
+
+ALL_COMMUNICATION_EXPERIENCE_METRICS = (
+    COMMUNICATION_EVENT_AND_DEMAND_METRICS
+    + LLM_ASSESSMENT_METRICS
+)
 
 @dataclass(frozen=True)
 class InterpretationResult:
@@ -88,6 +135,7 @@ def interpret_interaction(
             error="context_serialization_failed",
         )
 
+    
     prompt = (
         'Return exactly this JSON structure: '
         '{"interpretation":"string"}. '
@@ -132,6 +180,7 @@ def interpret_interaction(
 
         f"Context: {context_json}"
     )
+
 
     command = [
         str(OLLAMA_EXECUTABLE),
@@ -540,33 +589,8 @@ def assess_communication_experience(
             None, model, "failed", "context_serialization_failed"
         )
 
-    metric_names = [
-        "communication_breakdown",
-        "understanding_difficulty",
-        "listening_effort",
-        "repetition_required",
-        "clarification_required",
-        "conversational_repair",
-        "missed_information",
-        "listening_fatigue",
-        "cognitive_fatigue",
-        "concentration_demand",
-        "frustration",
-        "disappointment",
-        "embarrassment",
-        "anxiety",
-        "stress",
-        "satisfaction",
-        "communication_confidence",
-        "willingness_to_participate",
-        "social_withdrawal",
-        "sense_of_inclusion",
-        "independence",
-        "interaction_completion",
-        "goal_achievement",
-        "participation_disruption",
-        "unresolved_communication_need",
-    ]
+    metric_names = list(ALL_COMMUNICATION_EXPERIENCE_METRICS)
+    llm_metric_names = list(LLM_ASSESSMENT_METRICS)
 
     prompt = (
         "Return exactly one JSON object with these fields: "
@@ -574,9 +598,16 @@ def assess_communication_experience(
         '"evidence":"brief evidence from the interaction",'
         '"assessment_confidence":"low|moderate|high"}. '
         f"Assess the experience of participant {participant_id} only. "
-        f"Include every metric in this list: {metric_names}. "
-        "For the first 21 metrics use 0=none, 1=low, 2=moderate, "
-        "3=high, 4=very high, or not_established. For "
+        f"Assess every metric in this list: {llm_metric_names}. "
+        "For all metrics except interaction_completion, "
+        "goal_achievement, participation_disruption and "
+        "unresolved_communication_need, use 0=none, 1=low, "
+        "2=moderate, 3=high, 4=very high, or not_established. "
+        "For listening_fatigue and cognitive_fatigue, return "
+        "not_established for an individual interaction because "
+        "these are cumulative measures requiring evidence across "
+        "multiple interactions. "
+        "For "
         "interaction_completion use completed, partially_completed, "
         "not_completed, or not_established. For goal_achievement use "
         "achieved, partially_achieved, not_achieved, or not_established. "
@@ -680,7 +711,7 @@ def assess_communication_experience(
 
     if (
         not isinstance(metrics, dict)
-        or set(metrics) != set(metric_names)
+        or set(metrics) != set(llm_metric_names)
         or any(
             not isinstance(value, str)
             or value not in (
@@ -699,8 +730,14 @@ def assess_communication_experience(
             None, model, "failed", "invalid_assessment_fields"
         )
 
+    complete_metrics = {
+        name: "not_established"
+        for name in COMMUNICATION_EVENT_AND_DEMAND_METRICS
+    }
+    complete_metrics.update(metrics)
+    
     assessment = {
-        "metrics": metrics,
+        "metrics": complete_metrics,
         "evidence": evidence.strip(),
         "assessment_confidence": confidence,
         "evidence_status": "llm_assessed_not_verified",

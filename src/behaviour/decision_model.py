@@ -14,6 +14,10 @@ DECISION_CONTEXTS = {
         "withdraw",
         "do_nothing",
     },
+    "clarification": {
+        "attempt_clarification",
+        "do_nothing",
+    },
     "repair": {
         "repeat_information",
         "rephrase_information",
@@ -23,13 +27,13 @@ DECISION_CONTEXTS = {
     },
 }
 
-
 def choose_action(
     agent,
     available_actions,
     relationship=None,
     rng=None,
     context=None,
+    communication_context=None,
 ):
     """Select an action using the agent's current state and relationship.
 
@@ -124,6 +128,22 @@ def choose_action(
         "do_nothing": 1.0,
     }
 
+    comprehension = None
+
+    if context == "response" and communication_context:
+        comprehension = communication_context.get(
+            "comprehension_assessment"
+        )
+
+        if comprehension == "understood":
+            weights["continue_interaction"] += 0.3
+        elif comprehension == "partially_understood":
+            weights["continue_interaction"] += 0.1
+            weights["withdraw"] += 0.1
+        elif comprehension == "misunderstood":
+            weights["continue_interaction"] -= 0.2
+            weights["withdraw"] += 0.3
+
     unknown_actions = set(available_actions) - set(weights)
 
     if unknown_actions:
@@ -163,5 +183,6 @@ def choose_action(
             "frustration": frustration,
             "relationship_trust": relationship_trust,
             "relationship_support": relationship_support,
+            "comprehension_assessment": comprehension,
         },
     }

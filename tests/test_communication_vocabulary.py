@@ -18,7 +18,7 @@ VOCABULARY_PATH = (
 def test_load_project_vocabulary():
     vocabulary = CommunicationVocabulary.from_file(VOCABULARY_PATH)
 
-    assert vocabulary.vocabulary_id == "AUS_HH_COMM_VOCAB"
+    assert vocabulary.vocabulary_id == "HWPS_COMM_VOCAB"
     assert vocabulary.version == "0.1.0"
     assert vocabulary.term_count == 149
 

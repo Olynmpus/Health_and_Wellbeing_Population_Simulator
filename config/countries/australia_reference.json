@@ -25,7 +25,7 @@
         ]
     },
     "notes": [
-        "Initial reference profile for the configurable hearing health simulator.",
+        "Initial reference profile for the configurable population simulator.",
         "Does not represent a validated or complete description of Australian hearing healthcare.",
         "Country-specific policy, eligibility and funding rules require separate evidence and configuration."
     ]

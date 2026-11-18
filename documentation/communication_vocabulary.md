@@ -1,7 +1,7 @@
-# Australian Hearing Health Population Simulator
+# Communication Vocabulary
 ## Communication Vocabulary
 
-**Vocabulary ID:** `AUS_HH_COMM_VOCAB`
+**Vocabulary ID:** `HWPS_COMM_VOCAB`
 **Version:** 0.1.0
 **Status:** Draft for review
 **Language:** Australian English (`en-AU`)

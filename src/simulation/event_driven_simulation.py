@@ -385,6 +385,24 @@ class EventDrivenSimulation:
             relationship,
         )
 
+        # Add environmental conditions when they are available.
+        environment = getattr(
+            self,
+            "_current_communication_environment",
+            None,
+        )
+
+        if environment is not None:
+            context["communication_environment"] = {
+                "background_noise": environment.background_noise,
+                "distance_metres": environment.distance_metres,
+                "speaker_face_visible": environment.speaker_face_visible,
+                "written_information_available": (
+                    environment.written_information_available
+                ),
+                "message_clarity": environment.message_clarity,
+            }
+
         return interpret_recipient_message(
             recipient_id=recipient_id,
             message=message,
@@ -404,6 +422,10 @@ class EventDrivenSimulation:
             }
             return False
 
+        # Generate the environment before interpreting the message.
+        environment = self.generate_communication_environment()
+        self._current_communication_environment = environment
+
         sender_id = initiation_event.initiating_agent_id
         recipient_id = next(
             participant
@@ -417,7 +439,7 @@ class EventDrivenSimulation:
             intended_message=generated.text,
             perceived_message=None,
             listener_interpretation=None,
-            environment=self.generate_communication_environment(),
+            environment=environment,
         )
 
         interpreted = self.interpret_initiation_message(
@@ -533,7 +555,293 @@ class EventDrivenSimulation:
 
         return self.record_event(event)
 
-    def make_response_decision(self, initiation_event):
+    def make_clarification_decision(self, initiation_event):
+        """Let the recipient independently decide whether to clarify."""
+
+        if initiation_event.event_type != "communication_initiation":
+            raise ValueError(
+                "A communication initiation event is required."
+            )
+
+        communication = initiation_event.communication
+
+        if communication is None:
+            raise ValueError(
+                "Initiation communication is required."
+            )
+
+        recipient_id = communication.listener_id
+        speaker_id = communication.speaker_id
+
+        relationship = next(
+            (
+                item for item in self.relationships
+                if item.agent_id == recipient_id
+                and item.contact_id == speaker_id
+                and item.status == "active"
+            ),
+            None,
+        )
+
+        decision = choose_action(
+            agent=self.agents[recipient_id],
+            available_actions=[
+                "attempt_clarification",
+                "do_nothing",
+            ],
+            relationship=relationship,
+            rng=self.rng,
+            context="clarification",
+        )
+
+        communication.clarification_requested = (
+            decision["action"] == "attempt_clarification"
+        )
+
+        event = SimulationEvent(
+            event_id=f"EVENT-{self.next_event_id:06d}",
+            timestamp=self.current_time,
+            event_type="clarification_decision",
+            participants=[speaker_id, recipient_id],
+            initiating_agent_id=recipient_id,
+            action=decision["action"],
+            decision_basis={
+                "probabilities": decision["probabilities"],
+                "factors": decision["decision_basis"],
+                "evidence_status": "simulation_assumption",
+            },
+            description=(
+                "The recipient decided whether to request clarification."
+            ),
+        )
+
+        return self.record_event(event)
+
+    def make_repair_decision(self, initiation_event):
+        """Let the original speaker independently choose a repair action."""
+
+        if initiation_event.event_type != "communication_initiation":
+            raise ValueError(
+                "A communication initiation event is required."
+            )
+
+        communication = initiation_event.communication
+
+        if communication is None:
+            raise ValueError(
+                "Initiation communication is required."
+            )
+
+        if not communication.clarification_requested:
+            return None
+
+        speaker_id = communication.speaker_id
+        recipient_id = communication.listener_id
+
+        relationship = next(
+            (
+                item for item in self.relationships
+                if item.agent_id == speaker_id
+                and item.contact_id == recipient_id
+                and item.status == "active"
+            ),
+            None,
+        )
+
+        decision = choose_action(
+            agent=self.agents[speaker_id],
+            available_actions=[
+                "repeat_information",
+                "rephrase_information",
+                "provide_written_information",
+                "decline_repair",
+                "do_nothing",
+            ],
+            relationship=relationship,
+            rng=self.rng,
+            context="repair",
+        )
+
+        event = SimulationEvent(
+            event_id=f"EVENT-{self.next_event_id:06d}",
+            timestamp=self.current_time,
+            event_type="repair_decision",
+            participants=[speaker_id, recipient_id],
+            initiating_agent_id=speaker_id,
+            action=decision["action"],
+            decision_basis={
+                "probabilities": decision["probabilities"],
+                "factors": decision["decision_basis"],
+                "evidence_status": "simulation_assumption",
+            },
+            description=(
+                "The original speaker decided how to respond "
+                "to the clarification request."
+            ),
+        )
+
+        return self.record_event(event)
+
+    def generate_repair_message(self, initiation_event, repair_event):
+        """Generate the original speaker's repair message."""
+
+        communication = initiation_event.communication
+        speaker_id = communication.speaker_id
+        recipient_id = communication.listener_id
+
+        relationship = next(
+            (
+                item for item in self.relationships
+                if item.agent_id == speaker_id
+                and item.contact_id == recipient_id
+                and item.status == "active"
+            ),
+            None,
+        )
+
+        if relationship is None:
+            raise ValueError(
+                "An active relationship is required to generate a repair."
+            )
+
+        context = self.build_agent_context(
+            speaker_id,
+            recipient_id,
+            relationship,
+        )
+
+        context["communication_repair"] = {
+            "original_message": communication.intended_message,
+            "recipient_interpretation": (
+                communication.listener_interpretation
+            ),
+            "interpretation_evidence": "llm_interpretation_not_verified",
+            "clarification_requested": True,
+            "repair_action": repair_event.action,
+        }
+
+        return generate_message(
+            agent_id=speaker_id,
+            interaction_context=context,
+        )
+
+    def run_repair_event(self, initiation_event, repair_decision=None):
+        """Generate and record a communication repair when selected."""
+
+        if repair_decision is None:
+            repair_decision = self.make_repair_decision(initiation_event)
+            
+        if repair_decision is None:
+            return None
+
+        if repair_decision.action not in {
+            "repeat_information",
+            "rephrase_information",
+            "provide_written_information",
+        }:
+            return None
+
+        response = self.generate_repair_message(
+            initiation_event,
+            repair_decision,
+        )
+
+        communication = initiation_event.communication
+        speaker_id = communication.speaker_id
+        recipient_id = communication.listener_id
+
+        environment = self.generate_communication_environment()
+        interpreted = None
+
+        if response.status == "generated" and response.text:
+            relationship = next(
+                (
+                    item for item in self.relationships
+                    if item.agent_id == recipient_id
+                    and item.contact_id == speaker_id
+                    and item.status == "active"
+                ),
+                None,
+            )
+
+            if relationship is None:
+                relationship = next(
+                    (
+                        item for item in self.relationships
+                        if item.agent_id == speaker_id
+                        and item.contact_id == recipient_id
+                        and item.status == "active"
+                    ),
+                    None,
+                )
+
+            if relationship is not None:
+                context = self.build_agent_context(
+                    recipient_id,
+                    speaker_id,
+                    relationship,
+                )
+                context["communication_repair"] = {
+                    "original_message": communication.intended_message,
+                    "repair_message": response.text,
+                    "repair_action": repair_decision.action,
+                }
+                interpreted = interpret_recipient_message(
+                    recipient_id=recipient_id,
+                    message=response.text,
+                    interaction_context=context,
+                )
+
+        repair_communication = CommunicationEvent(
+            speaker_id=speaker_id,
+            listener_id=recipient_id,
+            intended_message=(
+                response.text if response.status == "generated" else None
+            ),
+            perceived_message=(
+                interpreted.perceived_message
+                if interpreted and interpreted.status == "interpreted"
+                else None
+            ),
+            listener_interpretation=(
+                interpreted.interpretation
+                if interpreted and interpreted.status == "interpreted"
+                else None
+            ),
+            environment=environment,
+        )
+
+        event = SimulationEvent(
+            event_id=f"EVENT-{self.next_event_id:06d}",
+            timestamp=self.current_time,
+            event_type="communication_repair",
+            participants=[speaker_id, recipient_id],
+            initiating_agent_id=speaker_id,
+            action=repair_decision.action,
+            decision_basis={
+                "repair_decision_event_id": repair_decision.event_id,
+                "message_generation": {
+                    "status": response.status,
+                    "model": response.model,
+                    "error": response.error,
+                },
+                "recipient_interpretation": {
+                    "status": (
+                        interpreted.status if interpreted else "not_attempted"
+                    ),
+                    "model": interpreted.model if interpreted else None,
+                    "error": interpreted.error if interpreted else None,
+                    "evidence_status": "llm_interpretation_not_verified",
+                },
+                "comprehension": "not_assessed",
+            },
+            description="The original speaker attempted communication repair.",
+            communication=repair_communication,
+        )
+
+        return self.record_event(event)
+    
+    def make_response_decision(self, initiation_event, incoming_event=None):
         """Let the recipient independently decide how to respond."""
 
         if initiation_event.event_type != "communication_initiation":
@@ -559,6 +867,15 @@ class EventDrivenSimulation:
             None,
         )
 
+        communication_event = incoming_event or initiation_event
+
+        communication_context = (
+            communication_event.decision_basis.get(
+                "recipient_interpretation",
+                {},
+            )
+        )
+
         decision = choose_action(
             agent=self.agents[recipient_id],
             available_actions=[
@@ -569,6 +886,7 @@ class EventDrivenSimulation:
             relationship=relationship,
             rng=self.rng,
             context="response",
+            communication_context=communication_context,
         )
 
         return {
@@ -611,7 +929,12 @@ class EventDrivenSimulation:
             interaction_context=context,
         )
 
-    def interpret_response_message(self, response_result, message):
+    def interpret_response_message(
+        self,
+        response_result,
+        message,
+        environment=None,
+    ):
         """Interpret the response from the original initiator's perspective."""
 
         recipient_id = response_result["initiating_agent_id"]
@@ -625,25 +948,44 @@ class EventDrivenSimulation:
             relationship,
         )
 
+        # Add environmental conditions when they are available.
+        if environment is not None:
+            context["communication_environment"] = {
+                "background_noise": environment.background_noise,
+                "distance_metres": environment.distance_metres,
+                "speaker_face_visible": environment.speaker_face_visible,
+                "written_information_available": (
+                    environment.written_information_available
+                ),
+                "message_clarity": environment.message_clarity,
+            }
+
         return interpret_recipient_message(
             recipient_id=recipient_id,
             message=message,
             interaction_context=context,
         )
 
-    def run_response_event(self, initiation_event):
+    def run_response_event(self, initiation_event, incoming_event=None):
         """Record the recipient's response when an active response occurs."""
 
-        result = self.make_response_decision(initiation_event)
+        result = self.make_response_decision(
+            initiation_event,
+            incoming_event,
+        )
         decision = result["decision"]
 
         if decision["action"] == "do_nothing":
             return None
 
+        communication_event = incoming_event or initiation_event
+
         response = self.generate_response_message(
             result,
-            initiation_event.communication,
+            communication_event.communication,
         )
+
+        environment = self.generate_communication_environment()
 
         interpreted = None
 
@@ -651,6 +993,7 @@ class EventDrivenSimulation:
             interpreted = self.interpret_response_message(
                 result,
                 response.text,
+                environment=environment,
             )
 
         communication = CommunicationEvent(
@@ -669,7 +1012,7 @@ class EventDrivenSimulation:
                 if interpreted and interpreted.status == "interpreted"
                 else None
             ),
-            environment=self.generate_communication_environment(),
+            environment=environment,
         )
 
         communication_assessment = {
@@ -942,6 +1285,17 @@ class EventDrivenSimulation:
 
         if not self.prepare_initiation_communication(initiation_event):
             return generated_events
+
+        if initiation_event.communication is not None:
+            clarification_event = self.make_clarification_decision(
+                initiation_event
+            )
+            generated_events.append(clarification_event)
+
+            repair_event = self.make_repair_decision(initiation_event)
+
+            if repair_event is not None:
+                generated_events.append(repair_event)
 
         response_event = self.run_response_event(initiation_event)
 

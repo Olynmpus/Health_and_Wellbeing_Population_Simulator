@@ -186,5 +186,44 @@ class TestDecisionContexts(unittest.TestCase):
                 ["withdraw"],
                 context="initiation",
             )
+    def test_comprehension_influences_response_decision(self):
+        actions = ["continue_interaction", "withdraw"]
 
+        understood = choose_action(
+            self.agent,
+            actions,
+            context="response",
+            communication_context={
+                "comprehension_assessment": "understood",
+            },
+            rng=random.Random(42),
+        )
 
+        misunderstood = choose_action(
+            self.agent,
+            actions,
+            context="response",
+            communication_context={
+                "comprehension_assessment": "misunderstood",
+            },
+            rng=random.Random(42),
+        )
+
+        self.assertGreater(
+            understood["probabilities"]["continue_interaction"],
+            misunderstood["probabilities"]["continue_interaction"],
+        )
+    def test_clarification_context_restricts_actions(self):
+        actions = [
+            "attempt_clarification",
+            "do_nothing",
+        ]
+
+        result = choose_action(
+            self.agent,
+            actions,
+            context="clarification",
+            rng=random.Random(42),
+        )
+
+        self.assertIn(result["action"], actions)
