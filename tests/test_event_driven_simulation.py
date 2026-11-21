@@ -80,7 +80,6 @@ class TestEventDrivenSimulation(unittest.TestCase):
                     ),
                 ),
             )
-
             simulation.record_interaction_memories(
                 initiation,
                 response,
@@ -133,6 +132,7 @@ class TestEventDrivenSimulation(unittest.TestCase):
             self.assertIsNone(recipient_record["emotional_appraisal"])
             self.assertIsNone(initiator_record["emotional_appraisal"])
 
+
     @patch(
         "src.simulation.event_driven_simulation.assess_communication_experience"
     )
@@ -141,15 +141,9 @@ class TestEventDrivenSimulation(unittest.TestCase):
         mock_assess,
     ):
         with tempfile.TemporaryDirectory() as temp_dir:
-            relationship = SimpleNamespace(
-                status="active",
-                agent_id="PERSON-001",
-                contact_id="PERSON-002",
-            )
-
             experiment = SimpleNamespace(
                 agents=[],
-                relationships=[relationship],
+                relationships=[],
                 random_seed=42,
             )
 
@@ -204,6 +198,15 @@ class TestEventDrivenSimulation(unittest.TestCase):
             simulation.record_interaction_memories(
                 initiation,
                 response,
+                clarification_event=SimpleNamespace(
+                    action="attempt_clarification"
+                ),
+                repair_decision_event=SimpleNamespace(
+                    action="rephrase_information"
+                ),
+                repair_communication_event=SimpleNamespace(
+                    event_type="communication_repair"
+                ),
             )
 
             recipient_record = simulation.memory.get_history(
@@ -222,6 +225,31 @@ class TestEventDrivenSimulation(unittest.TestCase):
             ]["experience_assessment"]
 
             self.assertEqual(mock_assess.call_count, 2)
+
+            recipient_metrics = recipient_record[
+                "additional_details"
+            ]["communication_event_metrics"]
+
+            initiator_metrics = initiator_record[
+                "additional_details"
+            ]["communication_event_metrics"]
+
+            self.assertEqual(
+                recipient_metrics["clarification_required"],
+                "1",
+            )
+            self.assertEqual(
+                recipient_metrics["conversational_repair"],
+                "1",
+            )
+            self.assertEqual(
+                recipient_metrics["communication_breakdown"],
+                "not_established",
+            )
+            self.assertEqual(
+                recipient_metrics,
+                initiator_metrics,
+            )
             self.assertEqual(
                 mock_assess.call_args_list[0].kwargs["participant_id"],
                 "PERSON-002",
@@ -412,6 +440,40 @@ class TestEventDrivenSimulation(unittest.TestCase):
             [],
         )
 
+    def test_returns_relationship_and_contextual_opportunities(self):
+        relationship = SocialRelationship(
+            "PERSON-001", "PERSON-002", "colleague"
+        )
+
+        experiment = SimpleNamespace(
+            agents=[
+                SimpleNamespace(agent_id="PERSON-001"),
+                SimpleNamespace(agent_id="PERSON-002"),
+                SimpleNamespace(agent_id="PERSON-003"),
+            ],
+            relationships=[relationship],
+            random_seed=42,
+        )
+
+        simulation = EventDrivenSimulation(experiment)
+
+        contextual_opportunity = {
+            "agent_id": "PERSON-001",
+            "contact_id": "PERSON-003",
+            "context": {
+                "setting": "shopping",
+                "purpose": "customer_service",
+            },
+        }
+
+        opportunities = simulation.get_interaction_opportunities(
+            [contextual_opportunity]
+        )
+
+        self.assertEqual(len(opportunities), 2)
+        self.assertIs(opportunities[0], relationship)
+        self.assertEqual(opportunities[1], contextual_opportunity)
+
 
     def make_agent(self, agent_id):
         state = SimpleNamespace(
@@ -592,15 +654,12 @@ class TestEventDrivenSimulation(unittest.TestCase):
 
     @patch("src.simulation.event_driven_simulation.generate_message")
     def test_generates_repair_message(self, mock_generate):
-        relationship = SocialRelationship(
-            "PERSON-001", "PERSON-002", "family"
-        )
         experiment = SimpleNamespace(
             agents=[
                 self.make_agent("PERSON-001"),
                 self.make_agent("PERSON-002"),
             ],
-            relationships=[relationship],
+            relationships=[],
             random_seed=42,
         )
         simulation = EventDrivenSimulation(experiment)
@@ -647,6 +706,7 @@ class TestEventDrivenSimulation(unittest.TestCase):
         mock_generate.assert_called_once()
 
         context = mock_generate.call_args.kwargs["interaction_context"]
+        self.assertIsNone(context["relationship"])
         self.assertEqual(
             context["communication_repair"]["repair_action"],
             "rephrase_information",
@@ -986,6 +1046,55 @@ class TestEventDrivenSimulation(unittest.TestCase):
                 "avoid_interaction",
                 "do_nothing",
             ],
+        )
+
+    @patch("src.simulation.event_driven_simulation.choose_action")
+    def test_makes_initiation_decision_for_contextual_opportunity(
+        self, mock_choose
+    ):
+        experiment = SimpleNamespace(
+            agents=[
+                self.make_agent("PERSON-001"),
+                self.make_agent("PERSON-002"),
+            ],
+            relationships=[],
+            random_seed=42,
+        )
+
+        mock_choose.return_value = {
+            "action": "initiate_conversation",
+            "probabilities": {},
+            "decision_basis": {},
+        }
+
+        simulation = EventDrivenSimulation(experiment)
+
+        interaction_context = {
+            "setting": "shopping",
+            "purpose": "customer_service",
+        }
+
+        opportunity = {
+            "agent_id": "PERSON-001",
+            "contact_id": "PERSON-002",
+            "context": interaction_context,
+        }
+
+        result = simulation.make_initiation_decision(opportunity)
+
+        self.assertIsNotNone(result)
+        self.assertIsNone(result["relationship"])
+        self.assertEqual(
+            result["interaction_context"],
+            interaction_context,
+        )
+        self.assertEqual(
+            result["initiating_agent_id"],
+            "PERSON-001",
+        )
+        self.assertEqual(result["contact_id"], "PERSON-002")
+        self.assertIsNone(
+            mock_choose.call_args.kwargs["relationship"]
         )
 
     def test_returns_none_without_interaction_opportunities(self):
@@ -1633,7 +1742,140 @@ class TestEventDrivenSimulation(unittest.TestCase):
         )
         mock_clarification.assert_called_once_with(initiation)
         mock_response.assert_called_once_with(initiation)
-        
+
+
+    @patch.object(EventDrivenSimulation, "record_interaction_memories")
+    @patch.object(EventDrivenSimulation, "run_response_event")
+    @patch.object(EventDrivenSimulation, "run_repair_event")
+    @patch.object(EventDrivenSimulation, "make_repair_decision")
+    @patch.object(EventDrivenSimulation, "make_clarification_decision")
+    @patch.object(
+        EventDrivenSimulation, "prepare_initiation_communication"
+    )
+    @patch.object(EventDrivenSimulation, "run_initiation_event")
+    def test_interaction_cycle_passes_repair_to_response(
+        self,
+        mock_initiation,
+        mock_prepare,
+        mock_clarification,
+        mock_repair_decision,
+        mock_repair_event,
+        mock_response,
+        mock_memories,
+    ):
+        simulation = EventDrivenSimulation(self.experiment)
+
+        initiation = SimulationEvent(
+            event_id="EVENT-000001",
+            timestamp=simulation.current_time,
+            event_type="communication_initiation",
+            participants=["PERSON-001", "PERSON-002"],
+            initiating_agent_id="PERSON-001",
+            action="initiate_conversation",
+            communication=CommunicationEvent(
+                speaker_id="PERSON-001",
+                listener_id="PERSON-002",
+                intended_message="Could you help me?",
+                perceived_message="Could you help me?",
+                listener_interpretation="The speaker is asking for help.",
+            ),
+        )
+
+        clarification = SimulationEvent(
+            event_id="EVENT-000002",
+            timestamp=simulation.current_time,
+            event_type="clarification_decision",
+            participants=["PERSON-001", "PERSON-002"],
+            initiating_agent_id="PERSON-002",
+            action="attempt_clarification",
+        )
+
+        repair_decision = SimulationEvent(
+            event_id="EVENT-000003",
+            timestamp=simulation.current_time,
+            event_type="repair_decision",
+            participants=["PERSON-001", "PERSON-002"],
+            initiating_agent_id="PERSON-001",
+            action="rephrase_information",
+        )
+
+        repair_event = SimulationEvent(
+            event_id="EVENT-000004",
+            timestamp=simulation.current_time,
+            event_type="communication_repair",
+            participants=["PERSON-001", "PERSON-002"],
+            initiating_agent_id="PERSON-001",
+            action="rephrase_information",
+        )
+
+        response = SimulationEvent(
+            event_id="EVENT-000005",
+            timestamp=simulation.current_time,
+            event_type="communication_response",
+            participants=["PERSON-001", "PERSON-002"],
+            initiating_agent_id="PERSON-002",
+            action="continue_interaction",
+        )
+
+        mock_initiation.return_value = initiation
+        mock_prepare.return_value = True
+        mock_clarification.return_value = clarification
+        mock_repair_decision.return_value = repair_decision
+        mock_repair_event.return_value = repair_event
+        mock_response.return_value = response
+
+        events = simulation.run_interaction_cycle()
+
+        self.assertEqual(
+            events,
+            [
+                initiation,
+                clarification,
+                repair_decision,
+                repair_event,
+                response,
+            ],
+        )
+
+        mock_repair_event.assert_called_once_with(
+            initiation,
+            repair_decision,
+        )
+        mock_response.assert_called_once_with(
+            initiation,
+            incoming_event=repair_event,
+        )
+
+    def test_builds_agent_context_without_relationship(self):
+        experiment = SimpleNamespace(
+            agents=[
+                self.make_agent("PERSON-001"),
+                self.make_agent("PERSON-002"),
+            ],
+            relationships=[],
+            random_seed=42,
+        )
+        simulation = EventDrivenSimulation(experiment)
+
+        context = simulation.build_agent_context(
+            "PERSON-001",
+            "PERSON-002",
+            None,
+        )
+
+        self.assertEqual(
+            context["relationship"],
+            None,
+        )
+        self.assertEqual(
+            context["agent"]["agent_id"],
+            "PERSON-001",
+        )
+        self.assertEqual(
+            context["other_participant"]["agent_id"],
+            "PERSON-002",
+        )
+
     def test_initialises_one_scheduled_opportunity_per_relationship(self):
         relationships = [
             SocialRelationship(
@@ -1674,6 +1916,60 @@ class TestEventDrivenSimulation(unittest.TestCase):
         self.assertGreater(
             schedule[("PERSON-001", "PERSON-002")],
             simulation.current_time,
+        )
+
+    @patch.object(EventDrivenSimulation, "run_interaction_cycle")
+    def test_schedules_and_reschedules_contextual_opportunity(
+        self,
+        mock_cycle,
+    ):
+        experiment = SimpleNamespace(
+            agents=[
+                self.make_agent("PERSON-001"),
+                self.make_agent("PERSON-002"),
+            ],
+            relationships=[],
+            random_seed=42,
+        )
+
+        opportunity = {
+            "agent_id": "PERSON-001",
+            "contact_id": "PERSON-002",
+            "context": {
+                "setting": "shopping",
+                "purpose": "customer_service",
+            },
+            "interactions_per_month": 2,
+        }
+
+        simulation = EventDrivenSimulation(
+            experiment,
+            contextual_opportunities=[opportunity],
+        )
+
+        schedule = simulation.initialise_opportunity_schedule()
+
+        key = ("__contextual_opportunity__", 0)
+
+        self.assertIn(key, schedule)
+        self.assertGreater(
+            schedule[key],
+            simulation.current_time,
+        )
+
+        scheduled_time = datetime(2026, 1, 5)
+        simulation.opportunity_schedule[key] = scheduled_time
+
+        mock_cycle.return_value = []
+
+        simulation.process_next_opportunity()
+
+        self.assertEqual(simulation.current_time, scheduled_time)
+        mock_cycle.assert_called_once_with(opportunity)
+        self.assertIn(key, simulation.opportunity_schedule)
+        self.assertGreater(
+            simulation.opportunity_schedule[key],
+            scheduled_time,
         )
 
     def test_returns_earliest_scheduled_opportunity(self):

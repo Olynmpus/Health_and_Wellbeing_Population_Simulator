@@ -136,48 +136,65 @@ def interpret_interaction(
         )
 
     
+    repair = interaction_context.get("communication_repair")
+    incoming = interaction_context.get("incoming_communication")
+
+    if repair:
+        repair_action = repair.get("repair_action")
+
+        if repair_action == "repeat_information":
+            message_instruction = (
+                "Repeat the original information faithfully. "
+                "Do not add new information."
+            )
+        elif repair_action == "rephrase_information":
+            message_instruction = (
+                "Explain the original information again using "
+                "different, clearer wording. Preserve its meaning "
+                "and do not add new information."
+            )
+        elif repair_action == "provide_written_information":
+            message_instruction = (
+                "Provide the information in a concise written form. "
+                "Do not simply copy the original message. "
+                "Present its essential information clearly so the "
+                "recipient can read it."
+            )
+        else:
+            message_instruction = (
+                "Generate an appropriate communication repair."
+            )
+
+    elif incoming:
+        message_instruction = (
+            "Generate a genuine response to the incoming communication. "
+            "Address its meaning and the recipient's interpretation. "
+            "Do not simply repeat or reproduce the incoming message."
+        )
+    else:
+        message_instruction = (
+            "Generate a realistic message appropriate to the current "
+            "interaction."
+        )
+
     prompt = (
-        'Return exactly this JSON structure: '
-        '{"interpretation":"string"}. '
-        f"Participant: {agent_id}. "
-
-        "Interpret the interaction strictly from the perspective "
-        "of the individual identified in the individual section. "
-
-        "IMPORTANT CONTEXT RULES: "
-        "The individual section describes the person being interpreted. "
-        "The other_participant section describes a different person. "
-        "Never transfer the other participant's characteristics, "
-        "state or experiences to the individual. "
-
-        "The current_interaction section describes the available "
-        "evidence about the actual interaction. "
-        "Do not invent events, dialogue, communication barriers "
-        "or reactions that are not described there. "
-
-        "Current state values are general model indicators. "
-        "They are not direct observations of this interaction. "
-        "Do not interpret numerical values as proof of a particular "
-        "feeling, behaviour or experience. "
-
-        "Relationship values describe the individual's relationship "
-        "with the other participant. They do not establish what "
-        "happened during this interaction. "
-
-        "Previous experiences may provide context but do not prove "
-        "that the same experience occurred again. "
-
-        "Describe what the individual might have experienced, "
-        "but distinguish available evidence from possible explanations. "
-        "Use cautious language for inferred thoughts and feelings. "
-
-        "Do not invent diagnoses, intentions, dialogue, events, "
-        "causal relationships or outcomes. "
-
-        "Keep the interpretation concise and specific to this interaction. "
-        "If the available evidence does not support a useful interpretation, "
-        'return "not_established". '
-
+        'Return exactly this JSON structure: {"message":"string"}. '
+        f"Generate a message for agent {agent_id}. "
+        f"{message_instruction} "
+        "Use only communication preferences explicitly recorded "
+        "in the context. Do not infer preferences, comprehension "
+        "or communication abilities from hearing profile, age or "
+        "device use. "
+        "Use the individual's role, current state, relationship "
+        "context and previous interaction history where relevant. "
+        "The message must be natural, specific and appropriate "
+        "to the current situation. "
+        "Do not describe internal numerical state values. "
+        "Do not assume the other participant knows private information "
+        "about this individual. "
+        "Do not invent events, diagnoses, services or resources. "
+        "Do not force a positive or negative outcome. "
+        "Do not guarantee any particular response. "
         f"Context: {context_json}"
     )
 

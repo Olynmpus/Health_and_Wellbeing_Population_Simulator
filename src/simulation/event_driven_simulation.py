@@ -28,6 +28,7 @@ class EventDrivenSimulation:
         start_time=None,
         random_seed=None,
         memory_path="outputs/event_simulation_memory.db",
+        contextual_opportunities=None,
     ):
         self.agents = {
             agent.agent_id: agent
@@ -35,6 +36,7 @@ class EventDrivenSimulation:
         }
 
         self.relationships = experiment.relationships
+        self.contextual_opportunities = contextual_opportunities or []
 
         seed = (
             random_seed
@@ -98,11 +100,28 @@ class EventDrivenSimulation:
 
         return self.current_time + timedelta(days=interval_days)
 
+    def schedule_next_contextual_opportunity(self, opportunity):
+        """Calculate the next random contact opportunity for a contextual encounter."""
+
+        interactions_per_month = opportunity.get("interactions_per_month", 0)
+
+        if interactions_per_month < 0:
+            raise ValueError("Interaction frequency cannot be negative.")
+
+        if interactions_per_month == 0:
+            return None
+
+        mean_interval_days = 30.44 / interactions_per_month
+        interval_days = self.rng.expovariate(1 / mean_interval_days)
+
+        return self.current_time + timedelta(days=interval_days)
+
     def initialise_opportunity_schedule(self):
-        """Schedule the first contact opportunity for each active relationship."""
+        """Schedule the first contact opportunity for relationships and contextual encounters."""
 
         self.opportunity_schedule = {}
 
+        # Schedule relationship-based opportunities.
         for relationship in self.get_interaction_opportunities():
             pair = tuple(sorted((
                 relationship.agent_id,
@@ -113,6 +132,26 @@ class EventDrivenSimulation:
 
             if next_time is not None:
                 self.opportunity_schedule[pair] = next_time
+
+        # Schedule contextual opportunities independently.
+        for index, opportunity in enumerate(self.contextual_opportunities):
+            valid_opportunities = self.get_interaction_opportunities(
+                [opportunity]
+            )
+
+            if opportunity not in valid_opportunities:
+                continue
+
+            next_time = self.schedule_next_contextual_opportunity(
+                opportunity
+            )
+
+            if next_time is not None:
+                contextual_key = (
+                    "__contextual_opportunity__",
+                    index,
+                )
+                self.opportunity_schedule[contextual_key] = next_time
 
         self.schedule_initialised = True
         return self.opportunity_schedule
@@ -131,15 +170,36 @@ class EventDrivenSimulation:
         return pair, self.opportunity_schedule[pair]
 
     def process_next_opportunity(self):
-        """Process the next scheduled relationship opportunity."""
+        """Process the next scheduled relationship or contextual opportunity."""
 
         scheduled = self.get_next_scheduled_opportunity()
 
         if scheduled is None:
             return []
 
-        pair, scheduled_time = scheduled
+        key, scheduled_time = scheduled
         self.current_time = scheduled_time
+
+        del self.opportunity_schedule[key]
+
+        # Process a contextual encounter.
+        if key[0] == "__contextual_opportunity__":
+            index = key[1]
+            opportunity = self.contextual_opportunities[index]
+
+            events = self.run_interaction_cycle(opportunity)
+
+            next_time = self.schedule_next_contextual_opportunity(
+                opportunity
+            )
+
+            if next_time is not None:
+                self.opportunity_schedule[key] = next_time
+
+            return events
+
+        # Process a relationship-based encounter.
+        pair = key
 
         relationship = next(
             (
@@ -161,8 +221,6 @@ class EventDrivenSimulation:
                 ),
                 None,
             )
-
-        del self.opportunity_schedule[pair]
 
         if relationship is None:
             return []
@@ -212,8 +270,11 @@ class EventDrivenSimulation:
 
         return event
 
-    def get_interaction_opportunities(self):
-        """Return unique active relationships between simulated agents."""
+    def get_interaction_opportunities(
+        self,
+        contextual_opportunities=None,
+    ):
+        """Return relationship-based and supplied contextual opportunities."""
 
         opportunities = []
         seen_pairs = set()
@@ -239,6 +300,19 @@ class EventDrivenSimulation:
             seen_pairs.add(pair)
             opportunities.append(relationship)
 
+        for opportunity in contextual_opportunities or []:
+            agent_id = opportunity["agent_id"]
+            contact_id = opportunity["contact_id"]
+
+            if (
+                agent_id not in self.agents
+                or contact_id not in self.agents
+                or agent_id == contact_id
+            ):
+                continue
+
+            opportunities.append(opportunity)
+
         return opportunities
 
     def build_agent_context(
@@ -246,12 +320,13 @@ class EventDrivenSimulation:
         agent_id,
         other_agent_id,
         relationship,
+        interaction_context=None,
     ):
         """Build private context for one agent's interaction perspective."""
 
         agent = self.agents[agent_id]
         other_agent = self.agents[other_agent_id]
-
+        relationship_context = None
         return {
             "agent": {
                 "agent_id": agent.agent_id,
@@ -290,15 +365,8 @@ class EventDrivenSimulation:
                 "agent_id": other_agent.agent_id,
                 "role": other_agent.profile.role,
             },
-            "relationship": {
-                "relationship_type": relationship.relationship_type,
-                "trust": relationship.trust,
-                "perceived_support": relationship.perceived_support,
-                "interactions_per_month": (
-                    relationship.interactions_per_month
-                ),
-                "status": relationship.status,
-            },
+            "relationship": relationship_context,
+            "interaction_context": interaction_context,
             "simulation_time": self.current_time.isoformat(),
         }
 
@@ -330,15 +398,15 @@ class EventDrivenSimulation:
             None,
         )
 
-        if relationship is None:
-            raise ValueError(
-                "An active relationship is required to generate a message."
-            )
+
 
         context = self.build_agent_context(
             speaker_id,
             recipient_id,
             relationship,
+            initiation_event.decision_basis.get(
+                "interaction_context"
+            ),
         )
 
         return generate_message(
@@ -374,15 +442,14 @@ class EventDrivenSimulation:
             None,
         )
 
-        if relationship is None:
-            raise ValueError(
-                "An active relationship is required to interpret a message."
-            )
 
         context = self.build_agent_context(
             recipient_id,
             sender_id,
             relationship,
+            initiation_event.decision_basis.get(
+                "interaction_context"
+            ),
         )
 
         # Add environmental conditions when they are available.
@@ -482,9 +549,18 @@ class EventDrivenSimulation:
 
             opportunity = self.rng.choice(opportunities)
 
+        if isinstance(opportunity, dict):
+            agent_id = opportunity["agent_id"]
+            opportunity_contact_id = opportunity["contact_id"]
+            interaction_context = opportunity.get("context")
+        else:
+            agent_id = opportunity.agent_id
+            opportunity_contact_id = opportunity.contact_id
+            interaction_context = None
+
         participants = [
-            opportunity.agent_id,
-            opportunity.contact_id,
+            agent_id,
+            opportunity_contact_id,
         ]
 
         initiating_agent_id = self.rng.choice(participants)
@@ -501,7 +577,7 @@ class EventDrivenSimulation:
                 and item.contact_id == contact_id
                 and item.status == "active"
             ),
-            opportunity,
+            None,
         )
 
         decision = choose_action(
@@ -520,6 +596,7 @@ class EventDrivenSimulation:
             "initiating_agent_id": initiating_agent_id,
             "contact_id": contact_id,
             "relationship": relationship,
+            "interaction_context": interaction_context,
             "decision": decision,
         }
 
@@ -549,6 +626,7 @@ class EventDrivenSimulation:
             decision_basis={
                 "probabilities": decision["probabilities"],
                 "factors": decision["decision_basis"],
+                "interaction_context": result["interaction_context"],
             },
             description="An agent initiated a conversation.",
         )
@@ -609,6 +687,9 @@ class EventDrivenSimulation:
                 "probabilities": decision["probabilities"],
                 "factors": decision["decision_basis"],
                 "evidence_status": "simulation_assumption",
+                "interaction_context": initiation_event.decision_basis.get(
+                    "interaction_context"
+                ),
             },
             description=(
                 "The recipient decided whether to request clarification."
@@ -698,16 +779,13 @@ class EventDrivenSimulation:
             ),
             None,
         )
-
-        if relationship is None:
-            raise ValueError(
-                "An active relationship is required to generate a repair."
-            )
-
         context = self.build_agent_context(
             speaker_id,
             recipient_id,
             relationship,
+            initiation_event.decision_basis.get(
+                "interaction_context"
+            ),
         )
 
         context["communication_repair"] = {
@@ -754,43 +832,33 @@ class EventDrivenSimulation:
         interpreted = None
 
         if response.status == "generated" and response.text:
-            relationship = next(
-                (
-                    item for item in self.relationships
-                    if item.agent_id == recipient_id
-                    and item.contact_id == speaker_id
-                    and item.status == "active"
-                ),
+            context = self.build_agent_context(
+                recipient_id,
+                speaker_id,
                 None,
+                initiation_event.decision_basis.get(
+                    "interaction_context"
+                ),
+            )
+            context["communication_repair"] = {
+                "original_message": communication.intended_message,
+                "repair_message": response.text,
+                "repair_action": repair_decision.action,
+            }
+            interpreted = interpret_recipient_message(
+                recipient_id=recipient_id,
+                message=response.text,
+                interaction_context=context,
             )
 
-            if relationship is None:
-                relationship = next(
-                    (
-                        item for item in self.relationships
-                        if item.agent_id == speaker_id
-                        and item.contact_id == recipient_id
-                        and item.status == "active"
-                    ),
-                    None,
-                )
+        repair_channel = (
+            "text"
+            if repair_decision.action == "provide_written_information"
+            else "speech"
+        )
 
-            if relationship is not None:
-                context = self.build_agent_context(
-                    recipient_id,
-                    speaker_id,
-                    relationship,
-                )
-                context["communication_repair"] = {
-                    "original_message": communication.intended_message,
-                    "repair_message": response.text,
-                    "repair_action": repair_decision.action,
-                }
-                interpreted = interpret_recipient_message(
-                    recipient_id=recipient_id,
-                    message=response.text,
-                    interaction_context=context,
-                )
+        if repair_channel == "text":
+            environment.written_information_available = True
 
         repair_communication = CommunicationEvent(
             speaker_id=speaker_id,
@@ -808,6 +876,7 @@ class EventDrivenSimulation:
                 if interpreted and interpreted.status == "interpreted"
                 else None
             ),
+            channel=repair_channel,
             environment=environment,
         )
 
@@ -893,6 +962,9 @@ class EventDrivenSimulation:
             "responding_agent_id": recipient_id,
             "initiating_agent_id": initiating_agent_id,
             "relationship": relationship,
+            "interaction_context": initiation_event.decision_basis.get(
+                "interaction_context"
+            ),
             "decision": decision,
         }
 
@@ -911,6 +983,7 @@ class EventDrivenSimulation:
             speaker_id,
             recipient_id,
             relationship,
+            response_result["interaction_context"],
         )
 
         if incoming_communication is not None:
@@ -946,6 +1019,7 @@ class EventDrivenSimulation:
             recipient_id,
             sender_id,
             relationship,
+            response_result["interaction_context"],
         )
 
         # Add environmental conditions when they are available.
@@ -1037,6 +1111,7 @@ class EventDrivenSimulation:
             initiating_agent_id=result["responding_agent_id"],
             action=decision["action"],
             decision_basis={
+                "interaction_context": result["interaction_context"],
                 "probabilities": decision["probabilities"],
                 "factors": decision["decision_basis"],
                 "communication_assessment": communication_assessment,
@@ -1068,6 +1143,9 @@ class EventDrivenSimulation:
         self,
         initiation_event,
         response_event=None,
+        clarification_event=None,
+        repair_decision_event=None,
+        repair_communication_event=None,
     ):
         """Record each participant's individual perspective."""
 
@@ -1079,9 +1157,41 @@ class EventDrivenSimulation:
 
         interaction_id = initiation_event.event_id
         initial = initiation_event.communication
+        interaction_context = getattr(
+            initiation_event,
+            "decision_basis",
+            {},
+        ).get("interaction_context")
 
         if initial is None:
             return
+
+        communication_event_metrics = {
+            "communication_breakdown": "not_established",
+            "understanding_difficulty": "not_established",
+            "repetition_required": "not_established",
+            "clarification_required": (
+                "1"
+                if clarification_event is not None
+                and clarification_event.action == "attempt_clarification"
+                else (
+                    "0"
+                    if clarification_event is not None
+                    else "not_established"
+                )
+            ),
+            "conversational_repair": (
+                "1"
+                if repair_communication_event is not None
+                else (
+                    "0"
+                    if clarification_event is not None
+                    else "not_established"
+                )
+            ),
+            "missed_information": "not_established",
+            "concentration_demand": "not_established",
+        }
 
         initiator_id = initial.speaker_id
         recipient_id = initial.listener_id
@@ -1112,6 +1222,7 @@ class EventDrivenSimulation:
 
         interaction = {
             "interaction_id": interaction_id,
+            "interaction_context": interaction_context,
             "initiating_message": {
                 "speaker_id": initial.speaker_id,
                 "listener_id": initial.listener_id,
@@ -1173,46 +1284,37 @@ class EventDrivenSimulation:
 
         assessments = {}
 
-        if relationship is not None:
-            for participant_id, other_id in (
-                (recipient_id, initiator_id),
-                (initiator_id, recipient_id),
-            ):
-                try:
-                    context = self.build_agent_context(
-                        participant_id,
-                        other_id,
-                        relationship,
-                    )
+        for participant_id, other_id in (
+            (recipient_id, initiator_id),
+            (initiator_id, recipient_id),
+        ):
+            try:
+                context = self.build_agent_context(
+                    participant_id,
+                    other_id,
+                    relationship,
+                    interaction_context,
+                )
 
-                    result = assess_communication_experience(
-                        participant_id=participant_id,
-                        interaction_context=context,
-                        interaction=interaction,
-                    )
+                result = assess_communication_experience(
+                    participant_id=participant_id,
+                    interaction_context=context,
+                    interaction=interaction,
+                )
 
-                    assessments[participant_id] = {
-                        "assessment": result.assessment,
-                        "model": result.model,
-                        "status": result.status,
-                        "error": result.error,
-                    }
+                assessments[participant_id] = {
+                    "assessment": result.assessment,
+                    "model": result.model,
+                    "status": result.status,
+                    "error": result.error,
+                }
 
-                except Exception as error:
-                    assessments[participant_id] = {
-                        "assessment": None,
-                        "model": "unknown",
-                        "status": "failed",
-                        "error": str(error),
-                    }
-
-        else:
-            for participant_id in (recipient_id, initiator_id):
+            except Exception as error:
                 assessments[participant_id] = {
                     "assessment": None,
                     "model": "unknown",
                     "status": "failed",
-                    "error": "active_relationship_not_found",
+                    "error": str(error),
                 }
 
         # Record the original recipient's perspective.
@@ -1237,6 +1339,12 @@ class EventDrivenSimulation:
                     "llm_interpretation_not_verified"
                 ),
                 "experience_assessment": assessments[recipient_id],
+                "communication_event_metrics": (
+                    communication_event_metrics
+                ),
+                "communication_event_metrics_evidence": (
+                    "simulation_recorded_events"
+                ),
             },
         )
 
@@ -1269,6 +1377,12 @@ class EventDrivenSimulation:
                 "interpretation_evidence": (
                     "llm_interpretation_not_verified"
                 ),
+                "communication_event_metrics": (
+                    communication_event_metrics
+                ),
+                "communication_event_metrics_evidence": (
+                    "simulation_recorded_events"
+                ),
                 "experience_assessment": assessments[initiator_id],
             },
         )
@@ -1286,18 +1400,38 @@ class EventDrivenSimulation:
         if not self.prepare_initiation_communication(initiation_event):
             return generated_events
 
+        clarification_event = None
+        repair_decision = None
+        repair_communication_event = None
+
         if initiation_event.communication is not None:
             clarification_event = self.make_clarification_decision(
                 initiation_event
             )
             generated_events.append(clarification_event)
 
-            repair_event = self.make_repair_decision(initiation_event)
+            repair_decision = self.make_repair_decision(
+                initiation_event
+            )
 
-            if repair_event is not None:
-                generated_events.append(repair_event)
+            if repair_decision is not None:
+                generated_events.append(repair_decision)
 
-        response_event = self.run_response_event(initiation_event)
+                repair_communication_event = self.run_repair_event(
+                    initiation_event,
+                    repair_decision,
+                )
+
+                if repair_communication_event is not None:
+                    generated_events.append(repair_communication_event)
+
+        if repair_communication_event is not None:
+            response_event = self.run_response_event(
+                initiation_event,
+                incoming_event=repair_communication_event,
+            )
+        else:
+            response_event = self.run_response_event(initiation_event)
 
         if response_event is not None:
             generated_events.append(response_event)
@@ -1305,6 +1439,9 @@ class EventDrivenSimulation:
         self.record_interaction_memories(
             initiation_event,
             response_event,
+            clarification_event=clarification_event,
+            repair_decision_event=repair_decision,
+            repair_communication_event=repair_communication_event,
         )
 
         return generated_events
