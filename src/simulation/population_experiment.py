@@ -2,6 +2,7 @@
 
 import json
 import random
+import statistics
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -621,6 +622,7 @@ def run_population_experiment(
     experiment_config_path,
     distribution_config_path,
     intervention_config_path=None,
+    random_seed_override=None,
 ):
     """Load configurations and initialise the synthetic population."""
     intervention = None
@@ -633,6 +635,16 @@ def run_population_experiment(
     experiment_config = load_experiment_config(
         experiment_config_path
     )
+
+    if random_seed_override is not None:
+        if (
+            isinstance(random_seed_override, bool)
+            or not isinstance(random_seed_override, int)
+        ):
+            raise ValueError("random_seed_override must be an integer.")
+        experiment_config["simulation"]["random_seed"] = (
+            random_seed_override
+        )
 
     experiment_path = Path(experiment_config_path).resolve()
 
@@ -742,3 +754,139 @@ def run_population_experiment(
         intervention=intervention,
         remote_travel_hours=remote_travel_hours,
     )
+
+
+def run_population_experiment_repetitions(
+    experiment_config_path,
+    distribution_config_path,
+    intervention_config_path=None,
+    repetitions=None,
+    base_seed=None,
+):
+    """Run repeated experiments using sequential, reproducible seeds."""
+    config = load_experiment_config(experiment_config_path)
+
+    if repetitions is None:
+        repetitions = config["simulation"].get(
+            "number_of_repetitions", 1
+        )
+
+    if (
+        isinstance(repetitions, bool)
+        or not isinstance(repetitions, int)
+        or repetitions <= 0
+    ):
+        raise ValueError("repetitions must be a positive integer.")
+
+    if base_seed is None:
+        base_seed = config["simulation"].get("random_seed")
+
+    if isinstance(base_seed, bool) or not isinstance(base_seed, int):
+        raise ValueError("A valid integer base_seed is required.")
+
+    return [
+        run_population_experiment(
+            experiment_config_path,
+            distribution_config_path,
+            intervention_config_path,
+            random_seed_override=base_seed + index,
+        )
+        for index in range(repetitions)
+    ]
+
+
+
+def _service_delivery_metrics(experiment):
+    """Flatten numeric service-delivery measures from an experiment."""
+    delivery = experiment.summary()["service_delivery"]
+    metrics = {}
+
+    def collect(values, prefix=""):
+        for key, value in values.items():
+            name = f"{prefix}.{key}" if prefix else key
+            if isinstance(value, dict):
+                collect(value, name)
+            elif isinstance(value, (int, float)) and not isinstance(value, bool):
+                metrics[name] = value
+
+    collect(delivery)
+    return metrics
+
+
+def _summarise_metric_values(values):
+    """Calculate descriptive statistics for a sequence of values."""
+    return {
+        "mean": round(statistics.mean(values), 2),
+        "standard_deviation": (
+            round(statistics.stdev(values), 2)
+            if len(values) > 1 else 0.0
+        ),
+        "minimum": min(values),
+        "maximum": max(values),
+    }
+
+
+def summarise_population_experiment_repetitions(runs):
+    """Summarise service-delivery outcomes across repeated experiments."""
+    if not runs:
+        raise ValueError("At least one experiment run is required.")
+
+    run_metrics = [_service_delivery_metrics(run) for run in runs]
+    metric_names = sorted({
+        name for metrics in run_metrics for name in metrics
+    })
+
+    return {
+        "run_count": len(runs),
+        "seeds": [run.random_seed for run in runs],
+        "metrics": {
+            name: _summarise_metric_values([
+                metrics.get(name, 0) for metrics in run_metrics
+            ])
+            for name in metric_names
+        },
+    }
+
+
+def compare_population_experiments(baseline_runs, intervention_runs):
+    """Compare repeated baseline and intervention runs using paired seeds."""
+    if not baseline_runs or not intervention_runs:
+        raise ValueError("Both scenarios must contain experiment runs.")
+
+    baseline_seeds = [run.random_seed for run in baseline_runs]
+    intervention_seeds = [run.random_seed for run in intervention_runs]
+
+    if baseline_seeds != intervention_seeds:
+        raise ValueError(
+            "Baseline and intervention runs must use matching seed sequences."
+        )
+
+    baseline_metrics = [_service_delivery_metrics(run) for run in baseline_runs]
+    intervention_metrics = [
+        _service_delivery_metrics(run) for run in intervention_runs
+    ]
+
+    metric_names = sorted({
+        name
+        for metrics in baseline_metrics + intervention_metrics
+        for name in metrics
+    })
+
+    paired_differences = {
+        name: _summarise_metric_values([
+            intervention.get(name, 0) - baseline.get(name, 0)
+            for baseline, intervention
+            in zip(baseline_metrics, intervention_metrics)
+        ])
+        for name in metric_names
+    }
+
+    return {
+        "baseline": summarise_population_experiment_repetitions(
+            baseline_runs
+        ),
+        "intervention": summarise_population_experiment_repetitions(
+            intervention_runs
+        ),
+        "paired_differences_intervention_minus_baseline": paired_differences,
+    }

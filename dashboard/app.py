@@ -1,4 +1,5 @@
 from pathlib import Path
+from collections import Counter
 import sys
 import math
 
@@ -10,7 +11,11 @@ import streamlit as st
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.simulation.population_experiment import run_population_experiment
+from src.simulation.population_experiment import (
+    run_population_experiment,
+    run_population_experiment_repetitions,
+    compare_population_experiments,
+)
 from dashboard.shared import load_longitudinal
 
 CONFIG = ROOT / "config" / "HH-EXP-001.json"
@@ -27,30 +32,37 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    .stApp { background-color: #0b1220; color: #e5eaf3; }
-    [data-testid="stSidebar"] { background-color: #111c2e; }
+    .stApp { background-color: #F8FAFC; color: #172033; }
+    [data-testid="stSidebar"] {
+        background-color: #F1F5F9;
+        border-right: 1px solid #D9E2EC;
+    }
     [data-testid="stMetric"] {
-        background: #152238;
-        border: 1px solid #263750;
+        background: #FFFFFF;
+        border: 1px solid #D9E2EC;
         padding: 16px;
         border-radius: 10px;
     }
+    [data-testid="stMetricLabel"] { color: #526176; }
+    [data-testid="stMetricValue"] { color: #172033; }
     .hero {
-        padding: 24px 28px;
-        border: 1px solid #263750;
+        padding: 28px 32px;
+        border: 1px solid #D9E2EC;
         border-radius: 14px;
-        background: linear-gradient(115deg, #14243b, #182d43);
+        background: linear-gradient(115deg, #FFFFFF, #EFF6FF);
         margin-bottom: 20px;
     }
-    .hero h1 { margin: 0; color: #f3f6fb; font-size: 2rem; }
-    .hero p { color: #a9bad0; margin-bottom: 0; }
+    .hero h1 { margin: 0; color: #172033; font-size: 2rem; }
+    .hero p { color: #526176; margin-bottom: 0; }
     .credit {
-        color: #8294aa;
+        color: #64748B;
         text-align: center;
         font-size: 0.82rem;
         padding: 24px 0 10px 0;
     }
-    h2, h3 { color: #eaf0f8; }
+    h1, h2, h3, h4 { color: #172033; }
+    [data-testid="stTabs"] button { color: #475569; font-weight: 600; }
+    [data-testid="stTabs"] button[aria-selected="true"] { color: #1D4ED8; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -192,9 +204,9 @@ def make_network(relationships, selected_agent, status_filter):
     fig.update_layout(
         height=470,
         margin=dict(l=20, r=20, t=25, b=35),
-        paper_bgcolor="#0b1220",
-        plot_bgcolor="#0b1220",
-        font=dict(color="#e5eaf3"),
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#FFFFFF",
+        font=dict(color="#243247"),
         xaxis=dict(visible=False, range=[-1.8, 1.8]),
         yaxis=dict(visible=False, range=[-1.2, 1.2]),
         hovermode="closest",
@@ -340,16 +352,16 @@ def make_household_network(agents, relationships, household_id=None):
     fig.update_layout(
         height=850 if household_id is None else 480,
         margin=dict(l=30, r=30, t=30, b=50),
-        paper_bgcolor="#0b1220",
-        plot_bgcolor="#0b1220",
-        font=dict(color="#e5eaf3"),
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#FFFFFF",
+        font=dict(color="#243247"),
         xaxis=dict(visible=False),
         yaxis=dict(visible=False, scaleanchor="x", scaleratio=1),
         legend=dict(
             orientation="h",
             y=-0.04,
             font=dict(color="#FFFFFF", size=14),
-            bgcolor="#0b1220",
+            bgcolor="#FFFFFF",
         ),
         hovermode="closest",
         )
@@ -464,9 +476,9 @@ def make_individual_network(agents, relationships, selected_agent_id):
     fig.update_layout(
         height=650,
         margin=dict(l=30, r=30, t=30, b=50),
-        paper_bgcolor="#0b1220",
-        plot_bgcolor="#0b1220",
-        font=dict(color="#e5eaf3"),
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#FFFFFF",
+        font=dict(color="#243247"),
         xaxis=dict(visible=False),
         yaxis=dict(visible=False, scaleanchor="x", scaleratio=1),
         hovermode="closest",
@@ -525,12 +537,13 @@ st.info(
     "wellbeing model is under development."
 )
 
-overview_tab, population_explorer_tab, relationships_tab, timeline_tab, research_tab = st.tabs([
-    "Population overview",
-    "Population explorer",
+overview_tab, population_explorer_tab, relationships_tab, timeline_tab, experiment_tab, research_tab = st.tabs([
+    "Population",
+    "Explore",
     "Relationships",
-    "Timeline & interactions",
-    "Research exploration",
+    "Experiences",
+    "Experiment Lab",
+    "Analyse",
 ])
 
 
@@ -583,76 +596,330 @@ with overview_tab:
     )
 
 
-# Population explorer
+# Population journey explorer
 with population_explorer_tab:
-    st.subheader("Explore population characteristics")
+    st.subheader("What happens to the population?")
     st.write(
-        "Examine the distribution of hearing profiles, geography, age "
-        "groups and auditory functional status."
+        "Start with everyone in the selected population, then follow "
+        "recorded functional status and service-request outcomes."
     )
 
-    distributions = summary["population_distributions"]
+    geographies = sorted({
+        agent.profile.geography for agent in population.agents
+    })
+    selected_geography = st.selectbox(
+        "Population group",
+        ["All geographies"] + geographies,
+        key="explore_geography",
+    )
 
-    left, right = st.columns(2)
+    selected_records = [
+        record for record in population.support_records
+        if (
+            selected_geography == "All geographies"
+            or record.agent.profile.geography == selected_geography
+        )
+    ]
 
-    with left:
-        st.markdown("#### Hearing profile")
-        frame = distribution_frame(distributions["hearing_profile"])
-        fig = px.bar(
-            frame, x="Category", y="People",
-            color="Category", text="People",
-        )
-        fig.update_layout(
-            showlegend=False, height=340,
-            paper_bgcolor="#0b1220", plot_bgcolor="#0b1220",
-            font_color="#e5eaf3",
-        )
-        st.plotly_chart(fig, width="stretch")
+    selected_agent_ids = {
+        record.agent_id for record in selected_records
+    }
 
-    with right:
-        st.markdown("#### Geographic distribution")
-        frame = distribution_frame(distributions["geography"])
-        fig = px.pie(
-            frame, names="Category", values="People", hole=0.55,
-        )
-        fig.update_layout(
-            height=340,
-            paper_bgcolor="#0b1220",
-            font_color="#e5eaf3",
-            legend_title_text="Geography",
-        )
-        st.plotly_chart(fig, width="stretch")
+    need_statuses = [
+        "no_identified_difficulty",
+        "difficulty_reported",
+        "functional_difficulty_confirmed",
+        "unknown",
+    ]
 
-    left, right = st.columns(2)
+    person_status = {}
+    person_has_request = {}
 
-    with left:
-        st.markdown("#### Age groups")
-        frame = distribution_frame(distributions["age_group"])
-        fig = px.bar(frame, x="Category", y="People", text="People")
-        fig.update_layout(
-            height=330, xaxis_tickangle=-25,
-            paper_bgcolor="#0b1220", plot_bgcolor="#0b1220",
-            font_color="#e5eaf3",
+    for record in selected_records:
+        initial_need = next(
+            (
+                need for need in record.hearing_support_needs
+                if need.assessment_month == 0
+            ),
+            None,
         )
-        st.plotly_chart(fig, width="stretch")
+        status = (
+            initial_need.functional_difficulty_status
+            if initial_need is not None
+            else "unknown"
+        )
+        if status not in need_statuses:
+            status = "unknown"
 
-    with right:
-        st.markdown("#### Auditory functional status")
-        frame = distribution_frame(distributions["functional_status"])
-        fig = px.bar(
-            frame, x="Category", y="People",
-            color="Category", text="People",
+        person_status[record.agent_id] = status
+        person_has_request[record.agent_id] = bool(record.service_demands)
+
+    selected_demands = [
+        demand
+        for record in selected_records
+        for demand in record.service_demands
+    ]
+    selected_demand_ids = {
+        demand.demand_id for demand in selected_demands
+    }
+
+    allocations_by_demand = {
+        allocation.demand_id: allocation
+        for record in selected_records
+        for allocation in record.service_allocations
+        if allocation.demand_id in selected_demand_ids
+    }
+
+    deliveries_by_demand = {
+        delivery.demand_id: delivery
+        for record in selected_records
+        for delivery in record.service_deliveries
+        if delivery.demand_id in selected_demand_ids
+    }
+
+    total_population = len(selected_records)
+    functional_counts = Counter(person_status.values())
+    people_with_requests = sum(person_has_request.values())
+    people_without_requests = total_population - people_with_requests
+
+    allocation_counts = Counter(
+        allocation.allocation_status
+        for allocation in allocations_by_demand.values()
+    )
+
+    allocated = allocation_counts["allocated"]
+    unallocated = allocation_counts["unallocated"]
+    allocation_not_recorded = max(
+        0, len(selected_demands) - len(allocations_by_demand)
+    )
+
+    attendance_counts = Counter(
+        delivery.attendance_status
+        for delivery in deliveries_by_demand.values()
+    )
+    delivery_counts = Counter(
+        delivery.delivery_status
+        for delivery in deliveries_by_demand.values()
+    )
+
+    attended = attendance_counts["attended"]
+    did_not_attend = attendance_counts["did_not_attend"]
+    delivered = delivery_counts["delivered"]
+
+    def percentage(numerator, denominator):
+        return (
+            f"{numerator / denominator * 100:.1f}%"
+            if denominator else "—"
         )
-        fig.update_layout(
-            height=330, xaxis_tickangle=-20,
+
+    st.markdown("#### 1. Population profile")
+    st.caption(
+        "Who is included in the selected population? "
+        "Bars show the number and percentage of people in each category."
+    )
+
+    metric1, metric2, metric3, metric4 = st.columns(4)
+    metric1.metric("Population", total_population)
+    metric2.metric(
+        "People with recorded difficulty",
+        functional_counts["difficulty_reported"]
+        + functional_counts["functional_difficulty_confirmed"],
+    )
+    metric3.metric("People generating a request", people_with_requests)
+    metric4.metric("Services delivered", delivered)
+
+    profile_labels = [
+        "No identified difficulty",
+        "Difficulty reported",
+        "Functional difficulty confirmed",
+        "Unknown functional status",
+    ]
+    profile_values = [
+        functional_counts[status] for status in need_statuses
+    ]
+    profile_percentages = [
+        value / total_population * 100 if total_population else 0
+        for value in profile_values
+    ]
+
+    if total_population:
+        profile_fig = go.Figure(go.Bar(
+            x=profile_values,
+            y=profile_labels,
+            orientation="h",
+            marker={
+                "color": ["#94A3B8", "#60A5FA", "#2563EB", "#CBD5E1"]
+            },
+            text=[
+                f"{value:,}  ({rate:.1f}%)"
+                for value, rate in zip(
+                    profile_values, profile_percentages
+                )
+            ],
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate=(
+                "%{y}<br>%{x} people"
+                "<extra></extra>"
+            ),
+        ))
+        profile_fig.update_layout(
+            height=290,
+            paper_bgcolor="#FFFFFF",
+            plot_bgcolor="#FFFFFF",
+            font={"color": "#243247", "size": 13},
+            margin={"l": 10, "r": 100, "t": 10, "b": 25},
+            xaxis={
+                "title": "Number of people",
+                "rangemode": "tozero",
+                "showgrid": True,
+                "gridcolor": "#E2E8F0",
+            },
+            yaxis={
+                "title": "",
+                "autorange": "reversed",
+                "showgrid": False,
+            },
             showlegend=False,
-            paper_bgcolor="#0b1220", plot_bgcolor="#0b1220",
-            font_color="#e5eaf3",
         )
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(profile_fig, width="stretch")
+    else:
+        st.info("No people match this population group.")
+
+    st.divider()
+    st.markdown("#### 2. Recorded service pathway")
+    st.caption(
+        "Follow the recorded service process. Percentages use the "
+        "preceding eligible stage as their denominator."
+    )
+
+    missing_delivery_records = sum(
+        1
+        for demand_id, allocation in allocations_by_demand.items()
+        if (
+            allocation.allocation_status == "allocated"
+            and demand_id not in deliveries_by_demand
+        )
+    )
+
+    request_count = len(selected_demands)
+
+    stage_columns = st.columns(4)
+
+    with stage_columns[0]:
+        st.markdown("**1. Service requests**")
+        st.metric("Generated", request_count)
+        st.caption(
+            f"{percentage(request_count, total_population)} "
+            "of the selected population"
+        )
+
+    with stage_columns[1]:
+        st.markdown("**2. Allocation**")
+        st.metric("Allocated", allocated)
+        st.caption(
+            f"{percentage(allocated, request_count)} of requests allocated"
+        )
+        st.caption(f"Unallocated: {unallocated}")
+        if allocation_not_recorded:
+            st.caption(f"Allocation not recorded: {allocation_not_recorded}")
+
+    with stage_columns[2]:
+        st.markdown("**3. Attendance**")
+        st.metric("Attended", attended)
+        st.caption(
+            f"{percentage(attended, allocated)} of allocated requests"
+        )
+        st.caption(f"Did not attend: {did_not_attend}")
+        if attendance_counts["unknown"]:
+            st.caption(
+                f"Attendance unknown: {attendance_counts['unknown']}"
+            )
+        if missing_delivery_records:
+            st.caption(
+                f"No delivery record: {missing_delivery_records}"
+            )
+
+    with stage_columns[3]:
+        st.markdown("**4. Service delivery**")
+        st.metric("Delivered", delivered)
+        st.caption(
+            f"{percentage(delivered, allocated)} of allocated requests"
+        )
+        st.caption(
+            f"Not delivered: {delivery_counts['not_delivered']}"
+        )
+        if delivery_counts["unknown"]:
+            st.caption(
+                f"Delivery status unknown: {delivery_counts['unknown']}"
+            )
+
+    st.caption(
+        "These are recorded simulation events, not observed real-world "
+        "population rates. 'No request' does not mean a person declined care. "
+        "Unknown and missing records are not treated as negative outcomes."
+    )
 
 
-# Relationships
+    with st.expander("Explore population characteristics"):
+        distributions = summary["population_distributions"]
+
+        left, right = st.columns(2)
+
+        with left:
+            st.markdown("#### Hearing profile")
+            frame = distribution_frame(distributions["hearing_profile"])
+            fig = px.bar(
+                frame, x="Category", y="People",
+                color="Category", text="People",
+            )
+            fig.update_layout(
+                showlegend=False, height=340,
+                paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF",
+                font_color="#243247",
+            )
+            st.plotly_chart(fig, width="stretch")
+
+        with right:
+            st.markdown("#### Geographic distribution")
+            frame = distribution_frame(distributions["geography"])
+            fig = px.pie(
+                frame, names="Category", values="People", hole=0.55,
+            )
+            fig.update_layout(
+                height=340, paper_bgcolor="#FFFFFF",
+                font_color="#243247", legend_title_text="Geography",
+            )
+            st.plotly_chart(fig, width="stretch")
+
+        left, right = st.columns(2)
+
+        with left:
+            st.markdown("#### Age groups")
+            frame = distribution_frame(distributions["age_group"])
+            fig = px.bar(frame, x="Category", y="People", text="People")
+            fig.update_layout(
+                height=330, xaxis_tickangle=-25,
+                paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF",
+                font_color="#243247",
+            )
+            st.plotly_chart(fig, width="stretch")
+
+        with right:
+            st.markdown("#### Auditory functional status")
+            frame = distribution_frame(distributions["functional_status"])
+            fig = px.bar(
+                frame, x="Category", y="People",
+                color="Category", text="People",
+            )
+            fig.update_layout(
+                height=330, xaxis_tickangle=-20, showlegend=False,
+                paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF",
+                font_color="#243247",
+            )
+            st.plotly_chart(fig, width="stretch")
+
+
 # Relationships
 with relationships_tab:
     st.subheader("Population household relationships")
@@ -918,9 +1185,9 @@ with timeline_tab:
     fig.update_layout(
         height=390,
         yaxis=dict(range=[0, 1], title="Modelled value"),
-        paper_bgcolor="#0b1220",
-        plot_bgcolor="#0b1220",
-        font_color="#e5eaf3",
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#FFFFFF",
+        font_color="#243247",
     )
     st.plotly_chart(fig, width="stretch")
 
@@ -987,6 +1254,168 @@ with timeline_tab:
         "labels describe the scenario's coded interaction outcomes, not clinical "
         "judgements or measured real-world effects."
     )
+
+
+# Experiment runner
+with experiment_tab:
+    st.subheader("Run and compare population scenarios")
+    st.write(
+        "Run repeated baseline and intervention experiments with matching "
+        "random seeds. Compare average service outcomes and variation "
+        "between runs."
+    )
+
+    control1, control2 = st.columns(2)
+    with control1:
+        repetitions = st.number_input(
+            "Number of repetitions",
+            min_value=1,
+            max_value=100,
+            value=10,
+            step=1,
+            help="Each repetition uses a different sequential random seed.",
+        )
+    with control2:
+        base_seed = st.number_input(
+            "Starting random seed",
+            min_value=0,
+            max_value=2147483647,
+            value=42,
+            step=1,
+        )
+
+    st.caption(
+        "Both scenarios use the same seed sequence. This supports paired "
+        "comparisons and helps separate scenario differences from random "
+        "variation."
+    )
+
+    if st.button("Run baseline and intervention comparison", type="primary"):
+        try:
+            with st.spinner(
+                f"Running {repetitions * 2} population experiments..."
+            ):
+                baseline_runs = run_population_experiment_repetitions(
+                    str(CONFIG),
+                    str(DISTRIBUTION),
+                    repetitions=int(repetitions),
+                    base_seed=int(base_seed),
+                )
+                intervention_runs = run_population_experiment_repetitions(
+                    str(CONFIG),
+                    str(DISTRIBUTION),
+                    str(INTERVENTION),
+                    repetitions=int(repetitions),
+                    base_seed=int(base_seed),
+                )
+
+                st.session_state["experiment_comparison"] = (
+                    compare_population_experiments(
+                        baseline_runs,
+                        intervention_runs,
+                    )
+                )
+            st.success("Experiment comparison completed.")
+        except Exception as error:
+            st.error(f"The experiment comparison failed: {error}")
+
+    comparison = st.session_state.get("experiment_comparison")
+
+    if comparison:
+        baseline_results = comparison["baseline"]["metrics"]
+        intervention_results = comparison["intervention"]["metrics"]
+        differences = comparison[
+            "paired_differences_intervention_minus_baseline"
+        ]
+
+        st.markdown("#### Scenario comparison")
+        st.caption(
+            f"{comparison['baseline']['run_count']} repetitions per scenario "
+            f"· Seeds {comparison['baseline']['seeds'][0]} to "
+            f"{comparison['baseline']['seeds'][-1]}"
+        )
+
+        metric_names = [
+            "total_demands",
+            "allocated",
+            "unallocated",
+            "attendance.attended",
+            "attendance.did_not_attend",
+            "delivery_outcomes.delivered",
+            "delivery_outcomes.not_delivered",
+        ]
+        available_metrics = [
+            name for name in metric_names
+            if name in baseline_results and name in intervention_results
+        ]
+
+        comparison_rows = []
+        for name in available_metrics:
+            comparison_rows.append({
+                "Measure": name.replace(".", " · ").replace("_", " ").title(),
+                "Baseline mean": baseline_results[name]["mean"],
+                "Intervention mean": intervention_results[name]["mean"],
+                "Paired difference": differences[name]["mean"],
+                "Difference SD": differences[name]["standard_deviation"],
+            })
+
+        st.dataframe(
+            pd.DataFrame(comparison_rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        selected_metric = st.selectbox(
+            "Visualise outcome",
+            available_metrics,
+            format_func=lambda value: (
+                value.replace(".", " · ").replace("_", " ").title()
+            ),
+        )
+
+        chart_data = pd.DataFrame([
+            {
+                "Scenario": "Baseline",
+                "Mean": baseline_results[selected_metric]["mean"],
+                "Standard deviation": baseline_results[selected_metric][
+                    "standard_deviation"
+                ],
+            },
+            {
+                "Scenario": "Mobile hearing outreach",
+                "Mean": intervention_results[selected_metric]["mean"],
+                "Standard deviation": intervention_results[selected_metric][
+                    "standard_deviation"
+                ],
+            },
+        ])
+
+        st.bar_chart(
+            chart_data.set_index("Scenario")[["Mean"]]
+        )
+
+        st.dataframe(
+            chart_data,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.markdown("#### Interpretation")
+        st.write(
+            "The paired difference is the intervention outcome minus the "
+            "baseline outcome for each matching seed, averaged across runs. "
+            "Standard deviations describe variation between simulated runs."
+        )
+        st.warning(
+            "These are simulated results under illustrative assumptions. "
+            "They do not establish real-world effectiveness or statistical "
+            "significance."
+        )
+    else:
+        st.info(
+            "Set the repetition count and starting seed, then run the "
+            "comparison to see results here."
+        )
 
 
 # Research exploration

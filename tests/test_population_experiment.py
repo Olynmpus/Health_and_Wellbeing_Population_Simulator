@@ -6,6 +6,9 @@ from src.simulation.population_experiment import (
     RELATIONSHIP_FREQUENCY_RANGES,
     create_household_relationships,
     run_population_experiment,
+    run_population_experiment_repetitions,
+    summarise_population_experiment_repetitions,
+    compare_population_experiments,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +21,72 @@ class TestPopulationExperiment(unittest.TestCase):
             PROJECT_ROOT / "config" / "HH-EXP-001.json",
             PROJECT_ROOT / "config" / "population_baseline.synthetic.json",
         )
+
+    def test_repeated_runs_use_sequential_seeds(self):
+        runs = run_population_experiment_repetitions(
+            PROJECT_ROOT / "config" / "HH-EXP-001.json",
+            PROJECT_ROOT / "config" / "population_baseline.synthetic.json",
+            repetitions=3,
+            base_seed=100,
+        )
+
+        self.assertEqual(
+            [run.random_seed for run in runs],
+            [100, 101, 102],
+        )
+
+    def test_repeated_runs_are_reproducible(self):
+        config = PROJECT_ROOT / "config" / "HH-EXP-001.json"
+        distribution = (
+            PROJECT_ROOT / "config" / "population_baseline.synthetic.json"
+        )
+
+        first = run_population_experiment_repetitions(
+            config, distribution, repetitions=2, base_seed=200
+        )
+        second = run_population_experiment_repetitions(
+            config, distribution, repetitions=2, base_seed=200
+        )
+
+        self.assertEqual(
+            [run.summary() for run in first],
+            [run.summary() for run in second],
+        )
+
+    def test_repetition_summary_reports_mean_and_variability(self):
+        runs = run_population_experiment_repetitions(
+            PROJECT_ROOT / "config" / "HH-EXP-001.json",
+            PROJECT_ROOT / "config" / "population_baseline.synthetic.json",
+            repetitions=2,
+            base_seed=300,
+        )
+
+        summary = summarise_population_experiment_repetitions(runs)
+
+        self.assertEqual(summary["run_count"], 2)
+        self.assertEqual(summary["seeds"], [300, 301])
+        self.assertIn("total_demands", summary["metrics"])
+        self.assertIn("mean", summary["metrics"]["total_demands"])
+        self.assertIn(
+            "standard_deviation",
+            summary["metrics"]["total_demands"],
+        )
+
+    def test_comparison_requires_matching_seed_sequences(self):
+        config = PROJECT_ROOT / "config" / "HH-EXP-001.json"
+        distribution = (
+            PROJECT_ROOT / "config" / "population_baseline.synthetic.json"
+        )
+
+        baseline = run_population_experiment_repetitions(
+            config, distribution, repetitions=2, base_seed=400
+        )
+        intervention = run_population_experiment_repetitions(
+            config, distribution, repetitions=2, base_seed=401
+        )
+
+        with self.assertRaisesRegex(ValueError, "matching seed sequences"):
+            compare_population_experiments(baseline, intervention)
 
     def test_population_size_matches_configuration(self):
         self.assertEqual(self.experiment.population_size, 1000)
