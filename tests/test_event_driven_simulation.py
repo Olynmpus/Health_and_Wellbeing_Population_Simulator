@@ -69,6 +69,25 @@ class TestEventDrivenSimulation(unittest.TestCase):
                 ),
             )
 
+            initiation = SimpleNamespace(
+                event_id="EVENT-000001",
+                communication=CommunicationEvent(
+                    speaker_id="PERSON-001",
+                    listener_id="PERSON-002",
+                    intended_message="Could you help me?",
+                    perceived_message="Could you assist?",
+                    listener_interpretation=(
+                        "The person is asking me for help."
+                    ),
+                ),
+            )
+
+            initiation.decision_basis = {
+                "recipient_interpretation": {
+                    "comprehension_assessment": "misunderstood",
+                },
+            }
+
             response = SimpleNamespace(
                 communication=CommunicationEvent(
                     speaker_id="PERSON-002",
@@ -216,6 +235,30 @@ class TestEventDrivenSimulation(unittest.TestCase):
                 "PERSON-001"
             )[0]
 
+            for record, perspective in (
+                (recipient_record, "recipient"),
+                (initiator_record, "initiator"),
+            ):
+                details = record["additional_details"]
+
+                self.assertEqual(
+                    details["perspective"],
+                    perspective,
+                )
+                self.assertIn("interaction", details)
+                self.assertIn("interaction_history", details)
+
+                history = details["interaction_history"]
+
+                self.assertIn("clarification_decision", history)
+                self.assertIn("repair_decision", history)
+                self.assertIn("repair_communication", history)
+
+            self.assertEqual(
+                recipient_record["additional_details"]["interaction"],
+                initiator_record["additional_details"]["interaction"],
+            )
+
             recipient_assessment = recipient_record[
                 "additional_details"
             ]["experience_assessment"]
@@ -224,7 +267,7 @@ class TestEventDrivenSimulation(unittest.TestCase):
                 "additional_details"
             ]["experience_assessment"]
 
-            self.assertEqual(mock_assess.call_count, 2)
+            self.assertEqual(mock_assess.call_count, 0)
 
             recipient_metrics = recipient_record[
                 "additional_details"
@@ -243,6 +286,10 @@ class TestEventDrivenSimulation(unittest.TestCase):
                 "1",
             )
             self.assertEqual(
+                recipient_metrics["repetition_required"],
+                "not_established",
+            )
+            self.assertEqual(
                 recipient_metrics["communication_breakdown"],
                 "not_established",
             )
@@ -250,22 +297,226 @@ class TestEventDrivenSimulation(unittest.TestCase):
                 recipient_metrics,
                 initiator_metrics,
             )
-            self.assertEqual(
-                mock_assess.call_args_list[0].kwargs["participant_id"],
-                "PERSON-002",
+            for assessment in (recipient_assessment, initiator_assessment):
+                self.assertIsNone(assessment["assessment"])
+                self.assertEqual(assessment["model"], "not_run")
+                self.assertEqual(assessment["status"], "not_run")
+                self.assertEqual(assessment["error"], "assessment_deferred")
+
+
+    def test_persists_complete_repair_communication_history(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            simulation = EventDrivenSimulation(
+                self.experiment,
+                start_time=datetime(2026, 1, 1),
+                memory_path=Path(temp_dir) / "memory.db",
             )
-            self.assertEqual(
-                mock_assess.call_args_list[1].kwargs["participant_id"],
-                "PERSON-001",
+
+            simulation.current_time = datetime(2026, 3, 1)
+
+            initiation = SimulationEvent(
+                event_id="EVENT-000001",
+                timestamp=simulation.current_time,
+                event_type="communication_initiation",
+                participants=["PERSON-001", "PERSON-002"],
+                initiating_agent_id="PERSON-001",
+                action="initiate_conversation",
+                communication=CommunicationEvent(
+                    speaker_id="PERSON-001",
+                    listener_id="PERSON-002",
+                    intended_message="The appointment is on Tuesday.",
+                    perceived_message="The appointment is on Thursday.",
+                    listener_interpretation="The appointment is Thursday.",
+                ),
             )
-            self.assertEqual(
-                recipient_assessment["assessment"]["metrics"]["frustration"],
-                "not_established",
+
+            response = SimulationEvent(
+                event_id="EVENT-000004",
+                timestamp=simulation.current_time,
+                event_type="communication_response",
+                participants=["PERSON-001", "PERSON-002"],
+                initiating_agent_id="PERSON-002",
+                action="confirm_information",
+                communication=CommunicationEvent(
+                    speaker_id="PERSON-002",
+                    listener_id="PERSON-001",
+                    intended_message="Thursday?",
+                    perceived_message="Thursday?",
+                    listener_interpretation="They are checking the date.",
+                ),
             )
-            self.assertEqual(
-                initiator_assessment["assessment"]["metrics"]["frustration"],
-                "0",
+
+            clarification = SimulationEvent(
+                event_id="EVENT-000002",
+                timestamp=simulation.current_time,
+                event_type="clarification_decision",
+                participants=["PERSON-001", "PERSON-002"],
+                initiating_agent_id="PERSON-002",
+                action="attempt_clarification",
             )
+
+            repair_decision = SimulationEvent(
+                event_id="EVENT-000003",
+                timestamp=simulation.current_time,
+                event_type="repair_decision",
+                participants=["PERSON-001", "PERSON-002"],
+                initiating_agent_id="PERSON-001",
+                action="rephrase_information",
+            )
+
+            repair = SimulationEvent(
+                event_id="EVENT-000005",
+                timestamp=simulation.current_time,
+                event_type="communication_repair",
+                participants=["PERSON-001", "PERSON-002"],
+                initiating_agent_id="PERSON-001",
+                action="rephrase_information",
+                decision_basis={
+                    "recipient_interpretation": {
+                        "status": "interpreted",
+                        "comprehension_assessment": "understood",
+                        "evidence_status": "llm_interpretation_not_verified",
+                    }
+                },
+                communication=CommunicationEvent(
+                    speaker_id="PERSON-001",
+                    listener_id="PERSON-002",
+                    intended_message="The appointment is Tuesday, not Thursday.",
+                    perceived_message="The appointment is Tuesday.",
+                    listener_interpretation="The appointment is Tuesday.",
+                ),
+            )
+
+            simulation.record_interaction_memories(
+                initiation,
+                response,
+                clarification_event=clarification,
+                repair_decision_event=repair_decision,
+                repair_communication_event=repair,
+            )
+
+            for participant_id, perspective in (
+                ("PERSON-002", "recipient"),
+                ("PERSON-001", "initiator"),
+            ):
+                record = simulation.memory.get_history(
+                    participant_id
+                )[0]
+
+                details = record["additional_details"]
+                history = details["interaction_history"]
+                repair_history = history["repair_communication"]
+                interaction = details["interaction"]
+
+                self.assertEqual(
+                    interaction["initiating_message"]["intended_message"],
+                    "The appointment is on Tuesday.",
+                )
+                self.assertEqual(
+                    interaction["initiating_message"]["perceived_message"],
+                    "The appointment is on Thursday.",
+                )
+
+                self.assertTrue(interaction["response"]["occurred"])
+                self.assertEqual(
+                    interaction["response"]["intended_message"],
+                    "Thursday?",
+                )
+
+                self.assertEqual(
+                    history["clarification_decision"]["event_id"],
+                    "EVENT-000002",
+                )
+                self.assertEqual(
+                    history["repair_decision"]["event_id"],
+                    "EVENT-000003",
+                )
+                self.assertEqual(details["perspective"], perspective)
+                self.assertEqual(
+                    repair_history["event_id"],
+                    "EVENT-000005",
+                )
+                self.assertEqual(
+                    repair_history["intended_message"],
+                    "The appointment is Tuesday, not Thursday.",
+                )
+                self.assertEqual(
+                    repair_history["perceived_message"],
+                    "The appointment is Tuesday.",
+                )
+                self.assertEqual(
+                    repair_history["interpretation"],
+                    "The appointment is Tuesday.",
+                )
+                self.assertEqual(
+                    repair_history["interpretation_status"],
+                    "interpreted",
+                )
+                self.assertEqual(
+                    repair_history["comprehension_assessment"],
+                    "understood",
+                )
+                self.assertEqual(
+                    repair_history["interpretation_evidence"],
+                    "llm_interpretation_not_verified",
+                )
+
+    @patch(
+        "src.simulation.event_driven_simulation.assess_communication_experience"
+    )
+    def test_records_repetition_required(self, mock_assess):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            simulation = EventDrivenSimulation(
+                self.experiment,
+                start_time=datetime(2026, 1, 1),
+                memory_path=Path(temp_dir) / "memory.db",
+            )
+
+            mock_assess.return_value = SimpleNamespace(
+                assessment={"metrics": {}},
+                model="test-model",
+                status="assessed",
+                error=None,
+            )
+
+            initiation = SimpleNamespace(
+                event_id="EVENT-000001",
+                communication=CommunicationEvent(
+                    speaker_id="PERSON-001",
+                    listener_id="PERSON-002",
+                    intended_message="Could you help me?",
+                    perceived_message="Could you assist?",
+                    listener_interpretation="They are asking for help.",
+                ),
+            )
+
+            simulation.record_interaction_memories(
+                initiation,
+                clarification_event=SimpleNamespace(
+                    action="attempt_clarification"
+                ),
+                repair_decision_event=SimpleNamespace(
+                    action="repeat_information"
+                ),
+                repair_communication_event=SimpleNamespace(
+                    event_type="communication_repair"
+                ),
+            )
+
+            recipient_record = simulation.memory.get_history(
+                "PERSON-002"
+            )[0]
+
+            metrics = recipient_record[
+                "additional_details"
+            ]["communication_event_metrics"]
+
+            self.assertEqual(
+                metrics["repetition_required"],
+                "1",
+            )
+
+
 
     @patch(
         "src.simulation.event_driven_simulation.assess_communication_experience"
@@ -337,16 +588,91 @@ class TestEventDrivenSimulation(unittest.TestCase):
                 "additional_details"
             ]["experience_assessment"]
 
-            self.assertEqual(mock_assess.call_count, 2)
-            self.assertEqual(recipient_assessment["status"], "failed")
-            self.assertEqual(
-                recipient_assessment["error"],
-                "assessment failed",
+            self.assertEqual(mock_assess.call_count, 0)
+            for assessment in (recipient_assessment, initiator_assessment):
+                self.assertIsNone(assessment["assessment"])
+                self.assertEqual(assessment["model"], "not_run")
+                self.assertEqual(assessment["status"], "not_run")
+                self.assertEqual(assessment["error"], "assessment_deferred")
+
+    def test_assesses_recent_communication_demand(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            simulation = EventDrivenSimulation(
+                self.experiment,
+                start_time=datetime(2026, 1, 31),
+                memory_path=Path(temp_dir) / "memory.db",
             )
-            self.assertEqual(initiator_assessment["status"], "assessed")
+
+            records = [
+                (
+                    "2025-12-31T12:00:00",
+                    {
+                        "clarification_required": "1",
+                        "repetition_required": "1",
+                        "conversational_repair": "1",
+                    },
+                ),
+                (
+                    "2026-01-01T00:00:00",
+                    {
+                        "clarification_required": "1",
+                        "repetition_required": "not_established",
+                        "conversational_repair": "1",
+                    },
+                ),
+                (
+                    "2026-01-15T12:00:00",
+                    {
+                        "clarification_required": "0",
+                        "repetition_required": "1",
+                        "conversational_repair": "0",
+                    },
+                ),
+                (
+                    "2026-01-31T00:00:00",
+                    {
+                        "clarification_required": "not_established",
+                        "repetition_required": "not_established",
+                        "conversational_repair": "not_established",
+                    },
+                ),
+            ]
+
+            for occurred_at, metrics in records:
+                simulation.memory.record_event(
+                    agent_id="PERSON-001",
+                    month=1,
+                    event_type="communication_interaction",
+                    actual_message="Test message",
+                    agent_interpretation="Test interpretation",
+                    outcome="not_assessed",
+                    additional_details={
+                        "occurred_at": occurred_at,
+                        "communication_event_metrics": metrics,
+                    },
+                )
+
+            result = simulation.assess_recent_communication_demand(
+                "PERSON-001"
+            )
+
+            self.assertEqual(result["interaction_count"], 3)
             self.assertEqual(
-                initiator_assessment["assessment"]["metrics"]["frustration"],
-                "0",
+                result["clarification_required_count"], 1
+            )
+            self.assertEqual(
+                result["repetition_required_count"], 1
+            )
+            self.assertEqual(
+                result["conversational_repair_count"], 1
+            )
+            self.assertEqual(
+                result["communication_breakdown_count"], 0
+            )
+            self.assertEqual(result["window_days"], 30)
+            self.assertEqual(
+                result["interpretation"],
+                "recorded_communication_demand_not_fatigue",
             )
 
     def test_communication_environment_is_reproducible(self):
@@ -535,6 +861,10 @@ class TestEventDrivenSimulation(unittest.TestCase):
                 listener_interpretation="The person is asking for help.",
             ),
         )
+
+        initiation.decision_basis["recipient_interpretation"] = {
+            "comprehension_assessment": "misunderstood",
+        }
         mock_choose_action.return_value = {
             "action": "attempt_clarification",
             "probabilities": {
@@ -545,6 +875,12 @@ class TestEventDrivenSimulation(unittest.TestCase):
         }
 
         event = simulation.make_clarification_decision(initiation)
+        self.assertEqual(
+            mock_choose_action.call_args.kwargs["communication_context"],
+            {
+                "comprehension_assessment": "misunderstood",
+            },
+        )
 
         self.assertTrue(initiation.communication.clarification_requested)
         self.assertEqual(event.event_type, "clarification_decision")
@@ -1855,26 +2191,34 @@ class TestEventDrivenSimulation(unittest.TestCase):
             relationships=[],
             random_seed=42,
         )
-        simulation = EventDrivenSimulation(experiment)
 
-        context = simulation.build_agent_context(
-            "PERSON-001",
-            "PERSON-002",
-            None,
-        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            simulation = EventDrivenSimulation(
+                experiment,
+                memory_path=Path(temp_dir) / "memory.db",
+            )
 
-        self.assertEqual(
-            context["relationship"],
-            None,
-        )
-        self.assertEqual(
-            context["agent"]["agent_id"],
-            "PERSON-001",
-        )
-        self.assertEqual(
-            context["other_participant"]["agent_id"],
-            "PERSON-002",
-        )
+            context = simulation.build_agent_context(
+                "PERSON-001",
+                "PERSON-002",
+                None,
+            )
+
+            self.assertEqual(context["relationship"], None)
+            self.assertEqual(
+                context["agent"]["agent_id"],
+                "PERSON-001",
+            )
+            self.assertEqual(
+                context["agent"]["recent_communication_demand"][
+                    "interaction_count"
+                ],
+                0,
+            )
+            self.assertEqual(
+                context["other_participant"]["agent_id"],
+                "PERSON-002",
+            )
 
     def test_initialises_one_scheduled_opportunity_per_relationship(self):
         relationships = [

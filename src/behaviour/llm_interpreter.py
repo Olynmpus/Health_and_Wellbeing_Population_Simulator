@@ -92,6 +92,8 @@ class CommunicationExperienceAssessmentResult:
     status: str
     error: str | None = None
 
+
+
 def interpret_interaction(
     agent_id,
     interaction_context,
@@ -323,6 +325,11 @@ def generate_message(
         "Use the individual's role, communication preferences, "
         "current state, relationship context and previous interaction "
         "history to guide the message. "
+        "Use recent communication demand as contextual evidence of "
+        "previous clarification, repetition and repair events. "
+        "It may inform how the individual approaches communication, "
+        "but do not assume fatigue, distress or difficulty from event "
+        "counts alone, and do not change the individual's state. "
         "The message must be natural, specific and appropriate to "
         "the current situation. "
         "Do not describe internal numerical state values. "

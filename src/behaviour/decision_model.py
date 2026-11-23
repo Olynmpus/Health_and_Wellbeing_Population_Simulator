@@ -130,19 +130,26 @@ def choose_action(
 
     comprehension = None
 
-    if context == "response" and communication_context:
+    if context in {"response", "clarification"} and communication_context:
         comprehension = communication_context.get(
             "comprehension_assessment"
         )
 
-        if comprehension == "understood":
-            weights["continue_interaction"] += 0.3
-        elif comprehension == "partially_understood":
-            weights["continue_interaction"] += 0.1
-            weights["withdraw"] += 0.1
-        elif comprehension == "misunderstood":
-            weights["continue_interaction"] -= 0.2
-            weights["withdraw"] += 0.3
+        if context == "response":
+            if comprehension == "understood":
+                weights["continue_interaction"] += 0.3
+            elif comprehension == "partially_understood":
+                weights["continue_interaction"] += 0.1
+                weights["withdraw"] += 0.1
+            elif comprehension == "misunderstood":
+                weights["continue_interaction"] -= 0.2
+                weights["withdraw"] += 0.3
+
+        elif context == "clarification":
+            if comprehension == "partially_understood":
+                weights["attempt_clarification"] += 0.1
+            elif comprehension == "misunderstood":
+                weights["attempt_clarification"] += 0.3
 
     unknown_actions = set(available_actions) - set(weights)
 

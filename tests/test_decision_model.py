@@ -25,6 +25,46 @@ class TestDecisionModel(unittest.TestCase):
             relationship_type="friend",
         )
 
+    def test_comprehension_influences_clarification_decision(self):
+        actions = ["attempt_clarification", "do_nothing"]
+
+        baseline = choose_action(
+            self.agent,
+            actions,
+            context="clarification",
+            rng=random.Random(42),
+        )
+
+        misunderstood = choose_action(
+            self.agent,
+            actions,
+            context="clarification",
+            communication_context={
+                "comprehension_assessment": "misunderstood",
+            },
+            rng=random.Random(42),
+        )
+
+        unknown = choose_action(
+            self.agent,
+            actions,
+            context="clarification",
+            communication_context={
+                "comprehension_assessment": "not_established",
+            },
+            rng=random.Random(42),
+        )
+
+        self.assertGreater(
+            misunderstood["probabilities"]["attempt_clarification"],
+            baseline["probabilities"]["attempt_clarification"],
+        )
+
+        self.assertEqual(
+            unknown["probabilities"],
+            baseline["probabilities"],
+        )
+
     def test_decision_is_reproducible_with_same_seed(self):
         actions = [
             "initiate_conversation",

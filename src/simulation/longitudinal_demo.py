@@ -1,8 +1,11 @@
 from pathlib import Path
+from datetime import datetime, timedelta
+from types import SimpleNamespace
 
 from src.agents.agent import Agent, AgentProfile, AgentState, AgentCommunicationProfile
 from src.agents.memory_store import MemoryStore
 from src.agents.relationships import SocialRelationship
+from src.simulation.event_driven_simulation import EventDrivenSimulation
 from src.behaviour.experience_model import apply_experience
 from src.behaviour.relationship_model import apply_relationship_experience
 from src.behaviour.communication_model import (
@@ -63,7 +66,7 @@ def build_individual_context(
         },
     }
 
-def run_experiment(database_path, enable_llm=False):
+def run_experiment(database_path, enable_llm=False, enable_autonomous=False):
     """Run a four-month illustrative longitudinal experiment."""
 
     database_path = Path(database_path)
@@ -282,6 +285,36 @@ def run_experiment(database_path, enable_llm=False):
 
     snapshots = []
 
+    autonomous_simulation = None
+    if enable_autonomous:
+        autonomous_database_path = database_path.with_name(
+            f"{database_path.stem}_autonomous.db"
+        )
+
+        if autonomous_database_path.exists():
+            raise FileExistsError(
+                f"Autonomous database already exists: "
+                f"{autonomous_database_path}. "
+                "Choose another path to avoid overwriting it."
+            )
+
+        autonomous_experiment = SimpleNamespace(
+            agents=list(agents.values()),
+            relationships=[
+                relationship
+                for agent_relationships in relationships.values()
+                for relationship in agent_relationships.values()
+            ],
+            random_seed=42,
+        )
+
+        autonomous_simulation = EventDrivenSimulation(
+            autonomous_experiment,
+            start_time=datetime(2026, 1, 1),
+            random_seed=42,
+            memory_path=autonomous_database_path,
+        )
+
     memory = MemoryStore(database_path)
 
     for event in monthly_events:
@@ -438,6 +471,48 @@ def run_experiment(database_path, enable_llm=False):
             }
         )
 
+        if autonomous_simulation is not None:
+            autonomous_simulation.run_until(
+                datetime(2026, month + 1, 1)
+            )
+
+            autonomous_history = autonomous_simulation.memory.get_history(
+                person.agent_id
+            )
+
+            autonomous_events = autonomous_simulation.events
+            initiation_events = [
+                event for event in autonomous_events
+                if event.event_type == "communication_initiation"
+            ]
+
+            snapshots[-1]["autonomous_interactions"] = sum(
+                record.get("event_type") == "communication_interaction"
+                for record in autonomous_history
+            )
+            snapshots[-1]["autonomous_initiations"] = len(
+                initiation_events
+            )
+            snapshots[-1]["autonomous_message_generation_failures"] = sum(
+                event.decision_basis.get(
+                    "message_generation", {}
+                ).get("status") not in (None, "generated")
+                for event in initiation_events
+            )
+
+            snapshots[-1]["autonomous_generation_errors"] = [
+                event.decision_basis.get("message_generation", {})
+                for event in initiation_events
+                if event.decision_basis.get(
+                    "message_generation", {}
+                ).get("status") not in (None, "generated")
+            ]
+            snapshots[-1]["autonomous_communication_demand"] = (
+                autonomous_simulation.assess_recent_communication_demand(
+                    person.agent_id
+                )
+            )
+
     agent_histories = {
         agent_id: memory.get_history(agent_id)
         for agent_id in agents
@@ -451,7 +526,8 @@ if __name__ == "__main__":
 
     try:
         person, relationships, history, snapshots = run_experiment(
-            output_path
+            output_path,
+            enable_autonomous=True,
         )
     except FileExistsError as error:
         raise SystemExit(str(error))
@@ -463,6 +539,18 @@ if __name__ == "__main__":
         print(f"\nMonth {snapshot['month']}: {snapshot['outcome']}")
         for key, value in snapshot["state"].items():
             print(f"  {key}: {value}")
+
+        if "autonomous_interactions" in snapshot:
+            print(f"  Autonomous initiations: {snapshot['autonomous_initiations']}")
+            print(f"  Autonomous completed interactions: {snapshot['autonomous_interactions']}")
+            print(f"  Message generation failures: {snapshot['autonomous_message_generation_failures']}")
+
+            for error in snapshot["autonomous_generation_errors"]:
+                print(
+                    f"  LLM error: status={error.get('status')}, "
+                    f"model={error.get('model')}, "
+                    f"error={error.get('error')}"
+                )
 
     print("\nFINAL RELATIONSHIPS")
     print("==================")

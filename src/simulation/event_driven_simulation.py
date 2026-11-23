@@ -359,6 +359,9 @@ class EventDrivenSimulation:
                     ),
                     "frustration": agent.state.frustration,
                 },
+                "recent_communication_demand": (
+                    self.assess_recent_communication_demand(agent_id)
+                ),
                 "recent_history": self.memory.get_history(agent_id)[-3:],
             },
             "other_participant": {
@@ -661,6 +664,11 @@ class EventDrivenSimulation:
             None,
         )
 
+        communication_context = initiation_event.decision_basis.get(
+            "recipient_interpretation",
+            {},
+        )
+
         decision = choose_action(
             agent=self.agents[recipient_id],
             available_actions=[
@@ -670,6 +678,7 @@ class EventDrivenSimulation:
             relationship=relationship,
             rng=self.rng,
             context="clarification",
+            communication_context=communication_context,
         )
 
         communication.clarification_requested = (
@@ -899,6 +908,11 @@ class EventDrivenSimulation:
                         interpreted.status if interpreted else "not_attempted"
                     ),
                     "model": interpreted.model if interpreted else None,
+                    "comprehension_assessment": (
+                        getattr(interpreted, "comprehension_assessment", None)
+                        if interpreted and interpreted.status == "interpreted"
+                        else None
+                    ),
                     "error": interpreted.error if interpreted else None,
                     "evidence_status": "llm_interpretation_not_verified",
                 },
@@ -1169,7 +1183,13 @@ class EventDrivenSimulation:
         communication_event_metrics = {
             "communication_breakdown": "not_established",
             "understanding_difficulty": "not_established",
-            "repetition_required": "not_established",
+            "repetition_required": (
+                "1"
+                if repair_communication_event is not None
+                and repair_decision_event is not None
+                and repair_decision_event.action == "repeat_information"
+                else "not_established"
+            ),
             "clarification_required": (
                 "1"
                 if clarification_event is not None
@@ -1282,40 +1302,78 @@ class EventDrivenSimulation:
             ),
         }
 
-        assessments = {}
 
-        for participant_id, other_id in (
-            (recipient_id, initiator_id),
-            (initiator_id, recipient_id),
-        ):
-            try:
-                context = self.build_agent_context(
-                    participant_id,
-                    other_id,
-                    relationship,
-                    interaction_context,
-                )
+        def event_summary(event):
+            if event is None:
+                return None
 
-                result = assess_communication_experience(
-                    participant_id=participant_id,
-                    interaction_context=context,
-                    interaction=interaction,
-                )
+            decision_basis = getattr(event, "decision_basis", {}) or {}
 
-                assessments[participant_id] = {
-                    "assessment": result.assessment,
-                    "model": result.model,
-                    "status": result.status,
-                    "error": result.error,
+            return {
+                "event_id": getattr(event, "event_id", None),
+                "event_type": getattr(event, "event_type", None),
+                "action": getattr(event, "action", None),
+                "decision_basis": decision_basis,
+                "evidence_status": decision_basis.get(
+                    "evidence_status"
+                ),
+            }
+
+        repair_decision_basis = (
+            getattr(repair_communication_event, "decision_basis", {}) or {}
+            if repair_communication_event is not None
+            else {}
+        )
+
+        repair_interpretation = repair_decision_basis.get(
+            "recipient_interpretation",
+            {},
+        )
+
+        interaction_history = {
+            "clarification_decision": event_summary(
+                clarification_event
+            ),
+            "repair_decision": event_summary(
+                repair_decision_event
+            ),
+            "repair_communication": (
+                {
+                    "event_id": getattr(
+                        repair_communication_event, "event_id", None
+                    ),
+                    "action": getattr(
+                        repair_communication_event, "action", None
+                    ),
+                    "speaker_id": repair_communication_event.communication.speaker_id,
+                    "listener_id": repair_communication_event.communication.listener_id,
+                    "intended_message": repair_communication_event.communication.intended_message,
+                    "perceived_message": repair_communication_event.communication.perceived_message,
+                    "interpretation": repair_communication_event.communication.listener_interpretation,
+                    "interpretation_status": repair_interpretation.get("status"),
+                    "comprehension_assessment": repair_interpretation.get(
+                        "comprehension_assessment"
+                    ),
+                    "interpretation_evidence": repair_interpretation.get(
+                        "evidence_status"
+                    ),
+                    "channel": repair_communication_event.communication.channel,
                 }
+                if repair_communication_event is not None
+                and getattr(repair_communication_event, "communication", None) is not None
+                else None
+            ),
+        }
+        assessments = {
+            participant_id: {
+                "assessment": None,
+                "model": "not_run",
+                "status": "not_run",
+                "error": "assessment_deferred",
+            }
+            for participant_id in (recipient_id, initiator_id)
+        }
 
-            except Exception as error:
-                assessments[participant_id] = {
-                    "assessment": None,
-                    "model": "unknown",
-                    "status": "failed",
-                    "error": str(error),
-                }
 
         # Record the original recipient's perspective.
         self.memory.record_event(
@@ -1330,7 +1388,10 @@ class EventDrivenSimulation:
             emotional_appraisal=None,
             additional_details={
                 "interaction_id": interaction_id,
+                "occurred_at": self.current_time.isoformat(),
                 "perspective": "recipient",
+                "interaction": interaction,
+                "interaction_history": interaction_history,
                 "perceived_message": initial.perceived_message,
                 "response_sent": (
                     response.intended_message if response else None
@@ -1369,7 +1430,10 @@ class EventDrivenSimulation:
             emotional_appraisal=None,
             additional_details={
                 "interaction_id": interaction_id,
+                "occurred_at": self.current_time.isoformat(),
                 "perspective": "initiator",
+                "interaction": interaction,
+                "interaction_history": interaction_history,
                 "message_sent": initial.intended_message,
                 "perceived_response": (
                     response.perceived_message if response else None
@@ -1455,4 +1519,64 @@ class EventDrivenSimulation:
             "event_count": len(self.events),
             "current_time": self.current_time.isoformat(),
             "random_seed": self.random_seed,
+        }
+
+    def assess_recent_communication_demand(
+        self,
+        agent_id,
+        window_days=30,
+    ):
+        """Summarise recorded communication demands over a recent period."""
+
+        if window_days <= 0:
+            raise ValueError("Window must be greater than zero days.")
+
+        period_start = self.current_time - timedelta(days=window_days)
+        recent_metrics = []
+
+        for record in self.memory.get_history(agent_id):
+            if record["event_type"] != "communication_interaction":
+                continue
+
+            details = record.get("additional_details", {})
+            occurred_at = details.get("occurred_at")
+
+            if not occurred_at:
+                continue
+
+            try:
+                event_time = datetime.fromisoformat(occurred_at)
+            except (TypeError, ValueError):
+                continue
+
+            if period_start <= event_time <= self.current_time:
+                recent_metrics.append(
+                    details.get("communication_event_metrics", {})
+                )
+
+        def count_events(metric):
+            return sum(
+                metrics.get(metric) == "1"
+                for metrics in recent_metrics
+            )
+
+        return {
+            "window_days": window_days,
+            "interaction_count": len(recent_metrics),
+            "clarification_required_count": count_events(
+                "clarification_required"
+            ),
+            "repetition_required_count": count_events(
+                "repetition_required"
+            ),
+            "conversational_repair_count": count_events(
+                "conversational_repair"
+            ),
+            "communication_breakdown_count": count_events(
+                "communication_breakdown"
+            ),
+            "evidence": "simulation_recorded_events",
+            "interpretation": (
+                "recorded_communication_demand_not_fatigue"
+            ),
         }
