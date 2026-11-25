@@ -2,6 +2,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+from src.hearing_support.support_use import SupportUse
 from src.simulation.population_experiment import (
     RELATIONSHIP_FREQUENCY_RANGES,
     create_household_relationships,
@@ -9,9 +10,93 @@ from src.simulation.population_experiment import (
     run_population_experiment_repetitions,
     summarise_population_experiment_repetitions,
     compare_population_experiments,
+    calibrate_hearing_aid_use,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+class CalibrationTestRecord:
+    def __init__(self, agent_id, age, any_impairment, moderate_or_worse):
+        self.agent_id = agent_id
+        self.agent = SimpleNamespace(
+            profile=SimpleNamespace(
+                age_years=age,
+                measured_any_hearing_impairment=any_impairment,
+                measured_moderate_or_worse_hearing_impairment=moderate_or_worse,
+            )
+        )
+        self.support_use_records = []
+
+    def add_support_use(self, support_use):
+        self.support_use_records.append(support_use)
+
+
+class TestHearingAidUseCalibration(unittest.TestCase):
+
+    CALIBRATION = {
+        "evidence_status": "evidence_supported",
+        "conditional_probabilities": {
+            "mild_bilateral_impairment": 0.269,
+            "moderate_or_worse_bilateral_impairment": 0.691,
+        },
+    }
+
+    def make_records(self, count, age, any_impairment, moderate_or_worse):
+        return [
+            CalibrationTestRecord(
+                f"AGENT-{index}",
+                age,
+                any_impairment,
+                moderate_or_worse,
+            )
+            for index in range(count)
+        ]
+
+    def test_sampled_hearing_aid_use_matches_aeehs_rates(self):
+        mild = self.make_records(10000, 65, True, False)
+        moderate = self.make_records(10000, 75, True, True)
+
+        calibrate_hearing_aid_use(mild, self.CALIBRATION, random_seed=42)
+        calibrate_hearing_aid_use(
+            moderate, self.CALIBRATION, random_seed=42
+        )
+
+        mild_rate = sum(bool(r.support_use_records) for r in mild) / len(mild)
+        moderate_rate = (
+            sum(bool(r.support_use_records) for r in moderate)
+            / len(moderate)
+        )
+
+        self.assertAlmostEqual(mild_rate, 0.269, delta=0.015)
+        self.assertAlmostEqual(moderate_rate, 0.691, delta=0.015)
+
+    def test_under_50_and_unknown_measurement_are_not_calibrated(self):
+        records = (
+            self.make_records(100, 45, True, False)
+            + self.make_records(100, 65, None, None)
+            + self.make_records(100, 65, False, False)
+        )
+
+        calibrate_hearing_aid_use(
+            records, self.CALIBRATION, random_seed=42
+        )
+
+        self.assertTrue(
+            all(not record.support_use_records for record in records)
+        )
+
+    def test_calibration_is_reproducible(self):
+        first = self.make_records(1000, 70, True, False)
+        second = self.make_records(1000, 70, True, False)
+
+        calibrate_hearing_aid_use(first, self.CALIBRATION, random_seed=123)
+        calibrate_hearing_aid_use(second, self.CALIBRATION, random_seed=123)
+
+        self.assertEqual(
+            [bool(r.support_use_records) for r in first],
+            [bool(r.support_use_records) for r in second],
+        )
 
 
 class TestPopulationExperiment(unittest.TestCase):
@@ -149,6 +234,69 @@ class TestPopulationExperiment(unittest.TestCase):
 
         self.assertEqual(summary["agent_count"], 1000)
         self.assertEqual(summary["support_record_count"], 1000)
+
+    def test_summary_reports_support_use_separately(self):
+        first, second = self.experiment.support_records[:2]
+
+        first.add_support_use(
+            SupportUse(
+                agent_id=first.agent_id,
+                assessment_month=0,
+                support_type="hearing_aid",
+                use_status="ever_used",
+                evidence_status="evidence_supported",
+            )
+        )
+        first.add_support_use(
+            SupportUse(
+                agent_id=first.agent_id,
+                assessment_month=1,
+                support_type="hearing_aid",
+                use_status="currently_using",
+                evidence_status="user_reported",
+            )
+        )
+        first.add_support_use(
+            SupportUse(
+                agent_id=first.agent_id,
+                assessment_month=2,
+                support_type="hearing_aid",
+                use_status="previously_used",
+                evidence_status="user_reported",
+            )
+        )
+        second.add_support_use(
+            SupportUse(
+                agent_id=second.agent_id,
+                assessment_month=0,
+                support_type="lip_reading",
+                use_status="currently_using",
+                evidence_status="user_reported",
+            )
+        )
+
+        support_use = self.experiment.summary()["support_use"]
+
+        self.assertEqual(
+            support_use["people_with_any_support_use_record"], 2
+        )
+        self.assertEqual(
+            support_use["people_without_support_use_record"], 998
+        )
+        self.assertEqual(support_use["support_use_record_count"], 4)
+        self.assertEqual(support_use["hearing_aid"]["people_ever_used"], 1)
+        self.assertEqual(
+            support_use["hearing_aid"]["people_currently_using"], 1
+        )
+        self.assertEqual(
+            support_use["by_support_type"]["hearing_aid"]["people_with_record"],
+            1,
+        )
+        self.assertEqual(
+            support_use["by_support_type"]["lip_reading"]["people_with_record"],
+            1,
+        )
+
 
     def test_summary_contains_all_population_distributions(self):
         summary = self.experiment.summary()

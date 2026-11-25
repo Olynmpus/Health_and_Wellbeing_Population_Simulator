@@ -207,6 +207,23 @@
       }
     }
   },
+  "hearing_aid_use_prevalence": {
+    "evidence_status": "evidence_supported",
+    "source": "Australian Eye and Ear Health Survey 2025",
+    "population": "Survey participants aged 50 years and over",
+    "measurement_condition": "Measured bilateral hearing impairment using better-ear four-frequency pure-tone average",
+    "support_type": "hearing_aid",
+    "use_status": "ever_used",
+    "conditional_probabilities": {
+      "mild_bilateral_impairment": 0.269,
+      "moderate_or_worse_bilateral_impairment": 0.691
+    },
+    "notes": [
+      "Reported hearing-aid use represents ever-use, not necessarily current use.",
+      "Rates apply to the specified measured impairment groups aged 50 years and over.",
+      "No rate is assumed for people without measured bilateral impairment or for people under 50."
+    ]
+  },
   "self_reported_hearing_prevalence": {
     "evidence_status": "evidence_supported",
     "source": "Australian Eye and Ear Health Survey 2025, Table 47, Q1",

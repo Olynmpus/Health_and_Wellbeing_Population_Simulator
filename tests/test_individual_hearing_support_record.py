@@ -3,6 +3,7 @@ import unittest
 from src.agents.agent import Agent, AgentProfile
 from src.hearing_support.funding import FundingArrangement
 from src.hearing_support.service_access import ServiceAccess
+from src.hearing_support.support_use import SupportUse
 from src.hearing_support.journey import HearingCareJourney, JourneyEvent
 from src.hearing_support.individual_record import (
     IndividualHearingSupportRecord,
@@ -33,6 +34,58 @@ class TestIndividualHearingSupportRecord(unittest.TestCase):
 
     def test_agent_id_matches(self):
         self.assertEqual(self.record.agent_id, "PERSON-001")
+
+    def test_support_use_records_are_empty_by_default(self):
+        self.assertEqual(self.record.support_use_records, [])
+
+    def test_add_support_use(self):
+        support = SupportUse(
+            agent_id="PERSON-001",
+            assessment_month=2,
+            support_type="consumer_hearable",
+            use_status="currently_using",
+            evidence_status="user_reported",
+        )
+
+        self.record.add_support_use(support)
+
+        self.assertEqual(len(self.record.support_use_records), 1)
+        self.assertTrue(self.record.validate())
+
+    def test_reject_support_use_for_different_agent(self):
+        support = SupportUse(
+            agent_id="PERSON-002",
+            assessment_month=1,
+            support_type="hearing_aid",
+            use_status="currently_using",
+        )
+
+        with self.assertRaises(ValueError):
+            self.record.add_support_use(support)
+
+    def test_support_use_serialisation_is_chronological(self):
+        self.record.add_support_use(SupportUse(
+            agent_id="PERSON-001",
+            assessment_month=3,
+            support_type="consumer_hearable",
+            use_status="currently_using",
+        ))
+        self.record.add_support_use(SupportUse(
+            agent_id="PERSON-001",
+            assessment_month=1,
+            support_type="hearing_aid",
+            use_status="previously_used",
+        ))
+
+        result = self.record.to_dict()
+        records = result["support_use_records"]
+
+        self.assertEqual(
+            [item["assessment_month"] for item in records],
+            [1, 3],
+        )
+        self.assertEqual(records[0]["support_type"], "hearing_aid")
+        self.assertEqual(records[1]["support_type"], "consumer_hearable")
 
     def test_add_funding_arrangement(self):
         arrangement = FundingArrangement(

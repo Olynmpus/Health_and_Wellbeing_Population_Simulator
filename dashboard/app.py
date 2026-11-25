@@ -19,7 +19,7 @@ from src.simulation.population_experiment import (
 from dashboard.shared import load_longitudinal
 
 CONFIG = ROOT / "config" / "HH-EXP-001.json"
-DISTRIBUTION = ROOT / "config" / "population_baseline.synthetic.json"
+DISTRIBUTION = ROOT / "config" / "population_australia_2025.json"
 INTERVENTION = ROOT / "config" / "interventions" / "mobile_hearing_outreach.json"
 
 
@@ -1425,6 +1425,110 @@ with population_explorer_tab:
         "Unknown and missing records are not treated as negative outcomes."
     )
 
+
+    st.divider()
+    st.markdown("#### 4. Hearing support use")
+    st.caption(
+        "Recorded use of hearing aids and other hearing supports. "
+        "These measures are separate from formal service requests "
+        "and service delivery."
+    )
+
+    selected_support_use_records = [
+        support_use
+        for record in selected_records
+        for support_use in record.support_use_records
+    ]
+
+    people_with_support_use = {
+        item.agent_id for item in selected_support_use_records
+    }
+    people_without_support_use = (
+        total_population - len(people_with_support_use)
+    )
+
+    hearing_aid_records = [
+        item for item in selected_support_use_records
+        if item.support_type == "hearing_aid"
+    ]
+
+    ever_used_statuses = {
+        "ever_used",
+        "previously_used",
+        "currently_using",
+    }
+
+    people_ever_used_hearing_aids = {
+        item.agent_id
+        for item in hearing_aid_records
+        if item.use_status in ever_used_statuses
+    }
+    people_currently_using_hearing_aids = {
+        item.agent_id
+        for item in hearing_aid_records
+        if item.use_status == "currently_using"
+    }
+
+    support_columns = st.columns(4)
+    support_columns[0].metric(
+        "People with recorded support use",
+        len(people_with_support_use),
+    )
+    support_columns[1].metric(
+        "No support-use record",
+        people_without_support_use,
+    )
+    support_columns[2].metric(
+        "Hearing-aid ever-use",
+        len(people_ever_used_hearing_aids),
+    )
+    support_columns[3].metric(
+        "Currently using hearing aids",
+        len(people_currently_using_hearing_aids),
+    )
+
+    st.caption(
+        "No support-use record means use has not been recorded; "
+        "it does not mean the person has never used support. "
+        "Ever-use includes people recorded as ever used, previously "
+        "used or currently using hearing aids."
+    )
+
+    support_type_rows = []
+    for support_type in sorted({
+        item.support_type for item in selected_support_use_records
+    }):
+        type_records = [
+            item for item in selected_support_use_records
+            if item.support_type == support_type
+        ]
+        support_type_rows.append({
+            "Support type": support_type.replace("_", " ").title(),
+            "People with recorded use": len({
+                item.agent_id for item in type_records
+            }),
+            "Records": len(type_records),
+        })
+
+    if support_type_rows:
+        st.markdown("**Recorded use by support type**")
+        st.dataframe(
+            pd.DataFrame(support_type_rows),
+            hide_index=True,
+            width="stretch",
+        )
+    else:
+        st.info(
+            "No support-use records are available for this population group."
+        )
+
+    st.caption(
+        "Hearing-aid use is calibrated to Australian Eye and Ear Health "
+        "Survey 2025 estimates for specified measured impairment groups "
+        "aged 50 and over. The displayed counts are simulated results, "
+        "not observed Australian population counts. Other support types "
+        "are not calibrated where suitable prevalence evidence is absent."
+    )
 
     with st.expander("Explore population characteristics"):
         distributions = summary["population_distributions"]

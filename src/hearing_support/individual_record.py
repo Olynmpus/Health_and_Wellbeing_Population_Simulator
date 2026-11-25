@@ -9,6 +9,7 @@ from src.hearing_support.funding import FundingArrangement
 from src.hearing_support.service_access import ServiceAccess
 from src.hearing_support.journey import HearingCareJourney
 from src.hearing_support.need import HearingSupportNeed
+from src.hearing_support.support_use import SupportUse
 
 
 @dataclass
@@ -27,6 +28,9 @@ class IndividualHearingSupportRecord:
         default_factory=list
     )
     hearing_support_needs: list[HearingSupportNeed] = field(
+        default_factory=list
+    )
+    support_use_records: list[SupportUse] = field(
         default_factory=list
     )
     service_demands: list[ServiceDemand] = field(
@@ -80,6 +84,12 @@ class IndividualHearingSupportRecord:
         )
         self.hearing_support_needs.append(need)
 
+    def add_support_use(self, support_use):
+        self._validate_association(
+            support_use, SupportUse, "Support-use record"
+        )
+        self.support_use_records.append(support_use)
+
     def add_service_demand(self, demand):
         from src.service_delivery.demand import ServiceDemand
         self._validate_association(
@@ -118,6 +128,7 @@ class IndividualHearingSupportRecord:
             ("service_access_records", self.service_access_records),
             ("journeys", self.journeys),
             ("hearing_support_needs", self.hearing_support_needs),
+            ("support_use_records", self.support_use_records),
             ("service_demands", self.service_demands),
             ("service_allocations", self.service_allocations),
             ("service_deliveries", self.service_deliveries),
@@ -136,6 +147,8 @@ class IndividualHearingSupportRecord:
              "Hearing-care journey"),
             (self.hearing_support_needs, HearingSupportNeed,
              "Hearing-support need"),
+            (self.support_use_records, SupportUse,
+             "Support-use record"),
             (self.service_demands, ServiceDemand, "Service demand"),
             (self.service_allocations, ServiceAllocation,
              "Service allocation"),
@@ -174,6 +187,13 @@ class IndividualHearingSupportRecord:
                 record.to_dict()
                 for record in sorted(
                     self.hearing_support_needs,
+                    key=lambda item: item.assessment_month,
+                )
+            ],
+            "support_use_records": [
+                record.to_dict()
+                for record in sorted(
+                    self.support_use_records,
                     key=lambda item: item.assessment_month,
                 )
             ],

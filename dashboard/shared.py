@@ -10,7 +10,7 @@ from src.simulation.population_experiment import run_population_experiment
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "config" / "HH-EXP-001.json"
-DISTRIBUTION = ROOT / "config" / "population_baseline.synthetic.json"
+DISTRIBUTION = ROOT / "config" / "population_australia_2025.json"
 INTERVENTION = (
     ROOT / "config" / "interventions" / "mobile_hearing_outreach.json"
 )

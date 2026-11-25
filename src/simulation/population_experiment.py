@@ -12,6 +12,7 @@ from src.country_config import load_country_profile
 from src.population.generator import generate_population
 from src.population.integration import create_hearing_support_records
 from src.hearing_support.need import HearingSupportNeed
+from src.hearing_support.support_use import SupportUse
 from src.service_delivery.demand import ServiceDemand
 from src.service_delivery.allocation import allocate_service_demand
 
@@ -205,6 +206,46 @@ class PopulationExperiment:
             delivery.clinician_id for delivery in deliveries
         )
 
+        support_use_records = [
+            support_use
+            for record in self.support_records
+            for support_use in record.support_use_records
+        ]
+
+        support_use_by_type = {}
+        for support_type in sorted({
+            item.support_type for item in support_use_records
+        }):
+            type_records = [
+                item for item in support_use_records
+                if item.support_type == support_type
+            ]
+            support_use_by_type[support_type] = {
+                "people_with_record": len({
+                    item.agent_id for item in type_records
+                }),
+                "people_by_use_status": {
+                    status: len({
+                        item.agent_id
+                        for item in type_records
+                        if item.use_status == status
+                    })
+                    for status in sorted({
+                        item.use_status for item in type_records
+                    })
+                },
+                "record_count": len(type_records),
+            }
+
+        people_with_support_use_record = {
+            item.agent_id for item in support_use_records
+        }
+
+        hearing_aid_records = [
+            item for item in support_use_records
+            if item.support_type == "hearing_aid"
+        ]
+
         return {
             "experiment_id": self.experiment_id,
             "experiment_name": self.experiment_name,
@@ -228,6 +269,34 @@ class PopulationExperiment:
             ),
             "agent_count": len(self.agents),
             "support_record_count": len(self.support_records),
+            "support_use": {
+                "people_with_any_support_use_record": len(
+                    people_with_support_use_record
+                ),
+                "people_without_support_use_record": (
+                    len(self.support_records)
+                    - len(people_with_support_use_record)
+                ),
+                "support_use_record_count": len(support_use_records),
+                "hearing_aid": {
+                    "people_ever_used": len({
+                        item.agent_id
+                        for item in hearing_aid_records
+                        if item.use_status in {
+                            "ever_used",
+                            "previously_used",
+                            "currently_using",
+                        }
+                    }),
+                    "people_currently_using": len({
+                        item.agent_id
+                        for item in hearing_aid_records
+                        if item.use_status == "currently_using"
+                    }),
+                    "record_count": len(hearing_aid_records),
+                },
+                "by_support_type": support_use_by_type,
+            },
             "service_delivery": {
                 "total_demands": len(demands),
                 "allocated": allocation_counts["allocated"],
@@ -626,6 +695,54 @@ def record_monthly_service_delivery(
 
     return support_records
 
+def calibrate_hearing_aid_use(support_records, calibration_config, random_seed=None):
+    """Sample reported lifetime hearing-aid use using AEEHS estimates.
+
+    Applies only to people aged 50+ with measured bilateral impairment:
+    26.9% for mild impairment and 69.1% for moderate-or-worse impairment.
+    These estimates represent ever-use, not current use.
+    """
+
+    if not calibration_config:
+        return support_records
+
+    probabilities = calibration_config["conditional_probabilities"]
+    rng = random.Random(
+        random_seed + 4 if random_seed is not None else None
+    )
+
+    for record in support_records:
+        profile = record.agent.profile
+
+        if profile.age_years is None or profile.age_years < 50:
+            continue
+
+        any_impairment = profile.measured_any_hearing_impairment
+        moderate_or_worse = (
+            profile.measured_moderate_or_worse_hearing_impairment
+        )
+
+        if moderate_or_worse is True:
+            probability = probabilities["moderate_or_worse_bilateral_impairment"]
+        elif any_impairment is True and moderate_or_worse is False:
+            probability = probabilities["mild_bilateral_impairment"]
+        else:
+            continue
+
+        if rng.random() < probability:
+            record.add_support_use(
+                SupportUse(
+                    agent_id=record.agent_id,
+                    assessment_month=0,
+                    support_type="hearing_aid",
+                    use_status="ever_used",
+                    evidence_status=calibration_config["evidence_status"],
+                )
+            )
+
+    return support_records
+
+
 def run_population_experiment(
     experiment_config_path,
     distribution_config_path,
@@ -698,6 +815,17 @@ def run_population_experiment(
     )
 
     support_records = create_hearing_support_records(agents)
+
+    support_records = calibrate_hearing_aid_use(
+        support_records,
+        calibration_config=distribution_config.get(
+            "hearing_aid_use_prevalence",
+            {},
+        ),
+        random_seed=experiment_config.get("simulation", {}).get(
+            "random_seed"
+        ),
+    )
 
     support_records = initialise_hearing_support_needs(
         support_records
