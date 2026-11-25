@@ -1,0 +1,228 @@
+{
+  "profile_id": "HH-POP-AU-2025",
+  "description": "Australian population age distribution based on ABS estimated resident population, June 2025.",
+  "evidence_status": "simulation_assumption",
+  "reference": {
+    "country": "Australia",
+    "reference_year": 2025,
+    "reference_date": "2025-06-30",
+    "source": "Australian Bureau of Statistics, National, state and territory population, Table 59: Estimated Resident Population by Single Year of Age, Australia."
+  },
+  "independence_assumption": true,
+  "notes": [
+    "Age-group weights are derived from national population estimates.",
+    "Age groups: infant 0-1, preschool 2-4, school_age 5-11, adolescent 12-17, working_age_adult 18-64, older_adult 65+.",
+    "Hearing profile, onset, progression and auditory functional status remain uncalibrated simulation assumptions.",
+    "Population characteristics are sampled independently.",
+    "Geographical weights are read from the experiment configuration.",
+    "Auditory functional status is sampled independently of audiometric profile.",
+    "Measured hearing status and self-reported hearing status are independent, uncalibrated simulation assumptions.",
+    "Exact ages are sampled from ABS June 2025 single-year population counts; the 100+ category is represented as age 100."
+  ],
+  "weights": {
+    "age_groups": {
+      "infant": 2.11,
+      "preschool": 3.35,
+      "school_age": 8.23,
+      "adolescent": 7.35,
+      "working_age_adult": 61.42,
+      "older_adult": 17.53
+    },
+    "hearing_profiles": {
+      "normal": 1,
+      "mild": 1,
+      "moderate": 1,
+      "severe": 1,
+      "profound": 1
+    },
+    "onset_types": {
+      "congenital": 1,
+      "acquired": 1
+    },
+    "progression_types": {
+      "stable": 1,
+      "progressive": 1,
+      "fluctuating": 1
+    },
+    "auditory_functional_status": {
+      "no_identified_difficulty": 1,
+      "difficulty_reported": 1,
+      "functional_difficulty_confirmed": 1,
+      "unknown": 1
+    },
+    "measured_hearing_status": {
+      "normal": 1,
+      "mild": 1,
+      "moderate": 1,
+      "severe": 1,
+      "profound": 1,
+      "not_assessed": 1,
+      "unknown": 1
+    },
+    "self_reported_hearing_status": {
+      "no_difficulty": 1,
+      "some_difficulty": 1,
+      "a_lot_of_difficulty": 1,
+      "unable_to_hear": 1,
+      "unsure": 1,
+      "not_asked": 1,
+      "unknown": 1
+    },
+    "age_years": {
+      "0": 291104,
+      "1": 292581,
+      "2": 297199,
+      "3": 317626,
+      "4": 309984,
+      "5": 308784,
+      "6": 316296,
+      "7": 318688,
+      "8": 325424,
+      "9": 334686,
+      "10": 332532,
+      "11": 335879,
+      "12": 339197,
+      "13": 338940,
+      "14": 336134,
+      "15": 339775,
+      "16": 337137,
+      "17": 338064,
+      "18": 342320,
+      "19": 346986,
+      "20": 350238,
+      "21": 351487,
+      "22": 354933,
+      "23": 368387,
+      "24": 388790,
+      "25": 398545,
+      "26": 398806,
+      "27": 405127,
+      "28": 410117,
+      "29": 412884,
+      "30": 418322,
+      "31": 412942,
+      "32": 410835,
+      "33": 408780,
+      "34": 413878,
+      "35": 413227,
+      "36": 405605,
+      "37": 401114,
+      "38": 399081,
+      "39": 399576,
+      "40": 395927,
+      "41": 390922,
+      "42": 388055,
+      "43": 374755,
+      "44": 362898,
+      "45": 344775,
+      "46": 335905,
+      "47": 325583,
+      "48": 322472,
+      "49": 322472,
+      "50": 324787,
+      "51": 329180,
+      "52": 336039,
+      "53": 347159,
+      "54": 349547,
+      "55": 326194,
+      "56": 321017,
+      "57": 307469,
+      "58": 300309,
+      "59": 298952,
+      "60": 301809,
+      "61": 309552,
+      "62": 312095,
+      "63": 308456,
+      "64": 304416,
+      "65": 292190,
+      "66": 285497,
+      "67": 278194,
+      "68": 269275,
+      "69": 262570,
+      "70": 253201,
+      "71": 243873,
+      "72": 239314,
+      "73": 230442,
+      "74": 225819,
+      "75": 218810,
+      "76": 209559,
+      "77": 206642,
+      "78": 206832,
+      "79": 168856,
+      "80": 156411,
+      "81": 142857,
+      "82": 124250,
+      "83": 117050,
+      "84": 103761,
+      "85": 95349,
+      "86": 85412,
+      "87": 75417,
+      "88": 66012,
+      "89": 56431,
+      "90": 46936,
+      "91": 38655,
+      "92": 32645,
+      "93": 26729,
+      "94": 22010,
+      "95": 17292,
+      "96": 12866,
+      "97": 9063,
+      "98": 6508,
+      "99": 5031,
+      "100+": 7225
+    }
+  },
+  "measured_hearing_prevalence": {
+    "evidence_status": "evidence_supported",
+    "source": "Australian Eye and Ear Health Survey 2025",
+    "measurement": "Bilateral hearing impairment measured using better-ear four-frequency pure-tone average.",
+    "thresholds": {
+      "any_impairment": "greater_than_25_db_hl",
+      "moderate_or_worse": "greater_than_40_db_hl"
+    },
+    "age_bands": {
+      "50-59": {
+        "minimum_age": 50,
+        "maximum_age": 59,
+        "any_impairment": 0.195,
+        "moderate_or_worse": 0.047
+      },
+      "60-69": {
+        "minimum_age": 60,
+        "maximum_age": 69,
+        "any_impairment": 0.37,
+        "moderate_or_worse": 0.081
+      },
+      "70-79": {
+        "minimum_age": 70,
+        "maximum_age": 79,
+        "any_impairment": 0.591,
+        "moderate_or_worse": 0.189
+      },
+      "80+": {
+        "minimum_age": 80,
+        "maximum_age": null,
+        "any_impairment": 0.839,
+        "moderate_or_worse": 0.478
+      }
+    }
+  },
+  "self_reported_hearing_prevalence": {
+    "evidence_status": "evidence_supported",
+    "source": "Australian Eye and Ear Health Survey 2025, Table 47, Q1",
+    "question": "Do you feel you have a hearing loss?",
+    "population": "Survey participants aged 50 years and over",
+    "measurement_condition": "Measured bilateral hearing impairment using better-ear four-frequency pure-tone average, greater than 25 dB HL",
+    "conditional_probabilities": {
+      "measured_any_hearing_impairment": {
+        "true": 0.519,
+        "false": 0.126
+      }
+    },
+    "notes": [
+      "Pooled survey estimates; not age-specific.",
+      "This binary response is separate from the simulator's graded self_reported_hearing_status categories.",
+      "A report of hearing loss without bilateral impairment above 25 dB HL is not necessarily a false positive; unilateral or other hearing difficulty may not be captured by this measurement."
+    ]
+  }
+}

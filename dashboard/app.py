@@ -324,7 +324,8 @@ def make_household_network(agents, relationships, household_id=None):
                 [
                     a.summary()["age_group"],
                     a.summary()["geography"],
-                    a.summary()["hearing_profile"],
+                    a.summary()["measured_hearing_status"],
+                    a.summary()["self_reported_hearing_status"],
                     a.summary()["auditory_functional_status"],
                     a.household_id or "No household recorded",
                 ]
@@ -336,9 +337,10 @@ def make_household_network(agents, relationships, household_id=None):
             ) + (
                 "Age group: %{customdata[0]}<br>"
                 "Geography: %{customdata[1]}<br>"
-                "Hearing profile: %{customdata[2]}<br>"
-                "Functional status: %{customdata[3]}<br>"
-                "Household: %{customdata[4]}"
+                "Measured hearing status: %{customdata[2]}<br>"
+                "Self-reported hearing status: %{customdata[3]}<br>"
+                "Auditory functional status: %{customdata[4]}<br>"
+                "Household: %{customdata[5]}"
                 "<extra></extra>"
             ),
             marker=dict(
@@ -459,15 +461,17 @@ def make_individual_network(agents, relationships, selected_agent_id):
             customdata=[[
                 agent.summary()["age_group"],
                 agent.summary()["geography"],
-                agent.summary()["hearing_profile"],
+                agent.summary()["measured_hearing_status"],
+                agent.summary()["self_reported_hearing_status"],
                 agent.summary()["auditory_functional_status"],
             ]],
             hovertemplate=(
                 "<b>%{text}</b><br>"
                 "Age group: %{customdata[0]}<br>"
                 "Geography: %{customdata[1]}<br>"
-                "Hearing profile: %{customdata[2]}<br>"
-                "Functional status: %{customdata[3]}"
+                "Measured hearing status: %{customdata[2]}<br>"
+                "Self-reported hearing status: %{customdata[3]}<br>"
+                "Auditory functional status: %{customdata[4]}"
                 "<extra></extra>"
             ),
             showlegend=False,
@@ -598,6 +602,473 @@ with overview_tab:
 
 # Population journey explorer
 with population_explorer_tab:
+    st.subheader("Combined human journey map")
+    st.caption(
+        "A shared view of recorded experiences across the four participants. "
+        "Each coloured route represents one participant."
+    )
+
+    participant_order = list(histories.keys())
+    participant_colours = [
+        "#2878B5", "#D47735", "#269B79", "#8957A5",
+        "#C45A75", "#687786",
+    ]
+    participant_colour_map = {
+        participant_id: participant_colours[index % len(participant_colours)]
+        for index, participant_id in enumerate(participant_order)
+    }
+    lane_positions = {
+        participant_id: index
+        for index, participant_id in enumerate(participant_order)
+    }
+
+    outcome_symbols = {
+        "negative_communication": "circle",
+        "misdirected_information": "diamond",
+        "supportive_communication": "square",
+        "blocked_service_access": "triangle-up",
+    }
+    event_labels = {
+        "family_interaction": "Family",
+        "social_interaction": "Social",
+        "service_interaction": "Service",
+    }
+
+    combined_rows = []
+    interaction_groups = {}
+
+    for participant_id in participant_order:
+        records = sorted(
+            histories[participant_id],
+            key=lambda record: record.get("month", 0),
+        )
+
+        for record in records:
+            details = record.get("additional_details", {})
+            if not isinstance(details, dict):
+                details = {}
+
+            interaction_id = details.get("interaction_id")
+            event_type = record.get("event_type", "other")
+            outcome = record.get("outcome", "not_established")
+
+            row = {
+                "participant": participant_id,
+                "month": record.get("month", 0),
+                "event_type": event_type,
+                "event_label": event_labels.get(
+                    event_type, event_type.replace("_", " ").title()
+                ),
+                "outcome": outcome,
+                "interaction_id": interaction_id,
+            }
+            combined_rows.append(row)
+
+            if interaction_id:
+                interaction_groups.setdefault(
+                    interaction_id, []
+                ).append(row)
+
+    if combined_rows:
+        combined_fig = go.Figure()
+
+        # Draw shared-interaction connectors behind the participant routes.
+        shared_interactions = {
+            interaction_id: rows
+            for interaction_id, rows in interaction_groups.items()
+            if len({row["participant"] for row in rows}) > 1
+        }
+
+        for interaction_id, rows in shared_interactions.items():
+            month = rows[0]["month"]
+            positions = [
+                lane_positions[row["participant"]]
+                for row in rows
+            ]
+
+            combined_fig.add_shape(
+                type="line",
+                x0=month,
+                x1=month,
+                y0=min(positions),
+                y1=max(positions),
+                line={
+                    "color": "#D6A83D",
+                    "width": 3,
+                    "dash": "dot",
+                },
+                layer="below",
+            )
+
+        # Draw each participant as a separate coloured route.
+        for participant_id in participant_order:
+            rows = sorted(
+                [
+                    row for row in combined_rows
+                    if row["participant"] == participant_id
+                ],
+                key=lambda row: row["month"],
+            )
+            if not rows:
+                continue
+
+            combined_fig.add_trace(go.Scatter(
+                x=[row["month"] for row in rows],
+                y=[lane_positions[participant_id]] * len(rows),
+                mode="lines+markers+text",
+                name=participant_id,
+                text=[row["event_label"] for row in rows],
+                textposition="top center",
+                textfont={"size": 10},
+                line={
+                    "color": participant_colour_map[participant_id],
+                    "width": 4,
+                },
+                marker={
+                    "size": 17,
+                    "color": participant_colour_map[participant_id],
+                    "symbol": [
+                        outcome_symbols.get(
+                            row["outcome"], "circle-open"
+                        )
+                        for row in rows
+                    ],
+                    "line": {"color": "#FFFFFF", "width": 2},
+                },
+                customdata=[
+                    [
+                        row["event_type"].replace("_", " ").title(),
+                        row["outcome"].replace("_", " ").title(),
+                        row["interaction_id"] or "Not recorded",
+                    ]
+                    for row in rows
+                ],
+                hovertemplate=(
+                    "<b>%{fullData.name}</b><br>"
+                    "Month: %{x}<br>"
+                    "Event: %{customdata[0]}<br>"
+                    "Outcome: %{customdata[1]}<br>"
+                    "Shared interaction: %{customdata[2]}"
+                    "<extra></extra>"
+                ),
+            ))
+
+        # Highlight events that belong to a shared interaction.
+        shared_points = [
+            row for rows in shared_interactions.values()
+            for row in rows
+        ]
+        if shared_points:
+            combined_fig.add_trace(go.Scatter(
+                x=[row["month"] for row in shared_points],
+                y=[
+                    lane_positions[row["participant"]]
+                    for row in shared_points
+                ],
+                mode="markers",
+                name="Shared interaction",
+                marker={
+                    "symbol": "diamond-open",
+                    "size": 27,
+                    "color": "#D6A83D",
+                    "line": {"width": 3},
+                },
+                customdata=[
+                    [
+                        row["participant"],
+                        row["interaction_id"],
+                    ]
+                    for row in shared_points
+                ],
+                hovertemplate=(
+                    "<b>Shared interaction</b><br>"
+                    "%{customdata[0]}<br>"
+                    "ID: %{customdata[1]}<br>"
+                    "Month: %{x}<extra></extra>"
+                ),
+            ))
+
+        # Add a compact outcome key using marker shapes.
+        for outcome, symbol in outcome_symbols.items():
+            combined_fig.add_trace(go.Scatter(
+                x=[None],
+                y=[None],
+                mode="markers",
+                name=outcome.replace("_", " ").title(),
+                marker={
+                    "symbol": symbol,
+                    "size": 11,
+                    "color": "#526174",
+                },
+                showlegend=True,
+                hoverinfo="skip",
+            ))
+
+        combined_fig.update_layout(
+            height=max(390, 115 * len(participant_order)),
+            paper_bgcolor="#FFFFFF",
+            plot_bgcolor="#FFFFFF",
+            font={"color": "#243247", "size": 12},
+            margin={"l": 15, "r": 20, "t": 35, "b": 100},
+            xaxis={
+                "title": "Simulation month",
+                "tickmode": "linear",
+                "dtick": 1,
+                "showgrid": True,
+                "gridcolor": "#E2E8F0",
+                "zeroline": False,
+            },
+            yaxis={
+                "title": "",
+                "tickmode": "array",
+                "tickvals": list(range(len(participant_order))),
+                "ticktext": participant_order,
+                "autorange": "reversed",
+                "showgrid": True,
+                "gridcolor": "#E2E8F0",
+                "zeroline": False,
+            },
+            legend={
+                "orientation": "h",
+                "yanchor": "top",
+                "y": -0.2,
+                "x": 0,
+                "font": {"size": 10},
+            },
+            hovermode="closest",
+        )
+
+        st.plotly_chart(combined_fig, width="stretch")
+
+        summary_columns = st.columns(len(participant_order))
+        for column, participant_id in zip(
+            summary_columns, participant_order
+        ):
+            event_count = sum(
+                row["participant"] == participant_id
+                for row in combined_rows
+            )
+            with column:
+                st.metric(participant_id, event_count, "recorded events")
+
+        st.caption(
+            "Route colours identify participants. Marker shapes identify "
+            "recorded outcomes. Gold diamond outlines and dotted connectors "
+            "identify shared interactions. Route lines show chronology, "
+            "not causation. Only recorded events are displayed."
+        )
+    else:
+        st.info("No recorded participant events are available.")
+
+    st.subheader("Individual journey map")
+    st.caption(
+        "Four-month illustrative demonstration. This is separate from "
+        "the 1,000-person population experiment."
+    )
+
+    journey_participants = list(histories.keys())
+    default_person_index = (
+        journey_participants.index(person.agent_id)
+        if person.agent_id in journey_participants else 0
+    )
+
+    selected_participant = st.selectbox(
+        "Participant perspective",
+        journey_participants,
+        index=default_person_index,
+        key="journey_participant",
+    )
+
+    journey_records = histories[selected_participant]
+
+    if journey_records:
+        journey_rows = []
+
+        for record in journey_records:
+            details = record.get("additional_details", {})
+            event_type = record.get("event_type", "other")
+            outcome = record.get("outcome", "not_established")
+
+            if event_type == "family_interaction":
+                context = "Family and social context"
+            elif event_type == "social_interaction":
+                context = "Social and communication"
+            elif event_type == "service_interaction":
+                context = "Health and support services"
+            else:
+                context = "Other recorded interaction"
+
+            if outcome in {
+                "negative_communication",
+                "misdirected_information",
+            }:
+                experience = "Difficulty / unmet need"
+                colour = "#DC6B65"
+            elif outcome == "supportive_communication":
+                experience = "Supportive experience"
+                colour = "#269B79"
+            elif outcome == "blocked_service_access":
+                experience = "Access barrier"
+                colour = "#D99436"
+            else:
+                experience = "Not established"
+                colour = "#94A3B8"
+
+            participants = details.get("participants", [])
+            other_participants = [
+                item for item in participants
+                if item != selected_participant
+            ]
+
+            journey_rows.append({
+                "record": record,
+                "details": details,
+                "month": record.get("month", 0),
+                "context": context,
+                "event_type": event_type,
+                "outcome": outcome,
+                "experience": experience,
+                "colour": colour,
+                "other_participant": (
+                    ", ".join(other_participants)
+                    if other_participants else "Not recorded"
+                ),
+            })
+
+        journey_rows.sort(key=lambda item: item["month"])
+
+        route_fig = go.Figure()
+        route_fig.add_trace(go.Scatter(
+            x=[item["month"] for item in journey_rows],
+            y=[item["context"] for item in journey_rows],
+            mode="lines+markers+text",
+            text=[f"Month {item['month']}" for item in journey_rows],
+            textposition="top center",
+            line={"color": "#64748B", "width": 3},
+            marker={
+                "size": 19,
+                "color": [item["colour"] for item in journey_rows],
+                "line": {"color": "#FFFFFF", "width": 2},
+            },
+            customdata=[
+                [
+                    item["event_type"].replace("_", " ").title(),
+                    item["experience"],
+                    item["other_participant"],
+                ]
+                for item in journey_rows
+            ],
+            hovertemplate=(
+                "%{y}<br>"
+                "%{customdata[0]}<br>"
+                "%{customdata[1]}<br>"
+                "Other participant: %{customdata[2]}"
+                "<extra></extra>"
+            ),
+        ))
+
+        route_fig.update_layout(
+            height=390,
+            paper_bgcolor="#FFFFFF",
+            plot_bgcolor="#FFFFFF",
+            font={"color": "#243247", "size": 12},
+            margin={"l": 10, "r": 25, "t": 45, "b": 45},
+            xaxis={
+                "title": "Simulation month",
+                "tickmode": "linear",
+                "dtick": 1,
+                "showgrid": True,
+                "gridcolor": "#E2E8F0",
+            },
+            yaxis={
+                "title": "",
+                "categoryorder": "array",
+                "categoryarray": [
+                    "Family and social context",
+                    "Social and communication",
+                    "Health and support services",
+                    "Other recorded interaction",
+                ],
+                "showgrid": True,
+                "gridcolor": "#E2E8F0",
+            },
+            showlegend=False,
+            hovermode="closest",
+        )
+
+        st.plotly_chart(route_fig, width="stretch")
+
+        st.caption(
+            "The route connects recorded events in chronological order. "
+            "It does not imply that unrecorded stages occurred."
+        )
+
+        journey_labels = [
+            (
+                f"Month {item['month']} · "
+                f"{item['event_type'].replace('_', ' ').title()}"
+            )
+            for item in journey_rows
+        ]
+
+        selected_event_index = st.selectbox(
+            "Explore a recorded event",
+            range(len(journey_rows)),
+            format_func=lambda index: journey_labels[index],
+            key="journey_event",
+        )
+
+        selected_event = journey_rows[selected_event_index]
+        selected_record = selected_event["record"]
+        selected_details = selected_event["details"]
+
+        detail_left, detail_right = st.columns(2)
+
+        with detail_left:
+            st.markdown("**Recorded event**")
+            st.write(selected_record.get("actual_message") or "Not recorded")
+            st.markdown("**Participant interpretation**")
+            st.write(
+                selected_record.get("agent_interpretation")
+                or "Not established"
+            )
+            st.markdown("**Observed event**")
+            st.write(
+                selected_details.get("observed_event")
+                or "Not recorded"
+            )
+
+        with detail_right:
+            st.markdown("**Participant report**")
+            st.write(
+                selected_details.get("participant_report")
+                or "No participant report recorded"
+            )
+            st.markdown("**Other participant**")
+            st.write(selected_event["other_participant"])
+            st.markdown("**Recorded outcome**")
+            st.write(selected_event["outcome"].replace("_", " ").title())
+
+        provenance = selected_details.get(
+            "interpretation_provenance", {}
+        )
+        st.caption(
+            "Interpretation provenance: "
+            f"{provenance.get('source', 'Not recorded')} · "
+            f"{provenance.get('evidence_status', 'Not established')} · "
+            f"Verified: {provenance.get('verified', 'Unknown')}"
+        )
+
+        st.markdown("**Communication effort and fatigue**")
+        st.info(
+            "Listening effort, listening fatigue and cognitive fatigue "
+            "are not measured in this illustrative journey. They are "
+            "not inferred from communication difficulty or interaction "
+            "outcomes."
+        )
+    else:
+        st.info("No recorded events are available for this participant.")
+
     st.subheader("What happens to the population?")
     st.write(
         "Start with everyone in the selected population, then follow "
@@ -787,7 +1258,101 @@ with population_explorer_tab:
         st.info("No people match this population group.")
 
     st.divider()
-    st.markdown("#### 2. Recorded service pathway")
+    st.markdown("#### 2. Population journey map")
+    st.caption(
+        "Unique people reaching each recorded service checkpoint. "
+        "A person is counted once at each checkpoint, even if they have "
+        "multiple service demands."
+    )
+
+    people_with_allocation = {
+        allocation.agent_id
+        for allocation in allocations_by_demand.values()
+        if allocation.allocation_status == "allocated"
+    }
+    people_with_attendance = {
+        delivery.agent_id
+        for delivery in deliveries_by_demand.values()
+        if delivery.attendance_status == "attended"
+    }
+    people_with_delivery = {
+        delivery.agent_id
+        for delivery in deliveries_by_demand.values()
+        if delivery.delivery_status == "delivered"
+    }
+
+    journey_stages = [
+        ("Population", total_population),
+        ("Recorded demand", people_with_requests),
+        ("Allocated", len(people_with_allocation)),
+        ("Attended", len(people_with_attendance)),
+        ("Service delivered", len(people_with_delivery)),
+    ]
+
+    journey_fig = go.Figure()
+
+    journey_fig.add_trace(go.Scatter(
+        x=list(range(len(journey_stages))),
+        y=[0] * len(journey_stages),
+        mode="lines",
+        line={"color": "#94A3B8", "width": 5},
+        hoverinfo="skip",
+        showlegend=False,
+    ))
+
+    journey_fig.add_trace(go.Scatter(
+        x=list(range(len(journey_stages))),
+        y=[0] * len(journey_stages),
+        mode="markers+text",
+        marker={
+            "size": [
+                max(18, min(54, 18 + value / max(total_population, 1) * 36))
+                for _, value in journey_stages
+            ],
+            "color": ["#64748B", "#3B82F6", "#0D9488", "#0D9488", "#16A34A"],
+            "line": {"color": "#FFFFFF", "width": 3},
+        },
+        text=[
+            f"{value:,}<br>{label}"
+            for label, value in journey_stages
+        ],
+        textposition="top center",
+        customdata=[
+            [label, value, percentage(value, total_population)]
+            for label, value in journey_stages
+        ],
+        hovertemplate=(
+            "%{customdata[0]}<br>"
+            "%{customdata[1]:,} unique people<br>"
+            "%{customdata[2]} of selected population"
+            "<extra></extra>"
+        ),
+        showlegend=False,
+    ))
+
+    journey_fig.update_layout(
+        height=270,
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#FFFFFF",
+        font={"color": "#243247", "size": 12},
+        margin={"l": 20, "r": 20, "t": 95, "b": 20},
+        xaxis={
+            "visible": False,
+            "range": [-0.35, len(journey_stages) - 0.65],
+        },
+        yaxis={"visible": False, "range": [-0.5, 1.1]},
+        showlegend=False,
+    )
+
+    st.plotly_chart(journey_fig, width="stretch")
+
+    st.caption(
+        "These checkpoints are not mutually exclusive branches. "
+        "People may have multiple requests, and may reach later stages "
+        "through different requests. Counts are unique people, not events."
+    )
+
+    st.markdown("#### 3. Recorded service pathway")
     st.caption(
         "Follow the recorded service process. Percentages use the "
         "preceding eligible stage as their denominator."
@@ -867,8 +1432,10 @@ with population_explorer_tab:
         left, right = st.columns(2)
 
         with left:
-            st.markdown("#### Hearing profile")
-            frame = distribution_frame(distributions["hearing_profile"])
+            st.markdown("#### Measured hearing status")
+            frame = distribution_frame(
+                distributions["measured_hearing_status"]
+            )
             fig = px.bar(
                 frame, x="Category", y="People",
                 color="Category", text="People",
@@ -881,6 +1448,24 @@ with population_explorer_tab:
             st.plotly_chart(fig, width="stretch")
 
         with right:
+            st.markdown("#### Self-reported hearing status")
+            frame = distribution_frame(
+                distributions["self_reported_hearing_status"]
+            )
+            fig = px.bar(
+                frame, x="Category", y="People",
+                color="Category", text="People",
+            )
+            fig.update_layout(
+                showlegend=False, height=340,
+                paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF",
+                font_color="#243247",
+            )
+            st.plotly_chart(fig, width="stretch")
+
+        left, right = st.columns(2)
+
+        with left:
             st.markdown("#### Geographic distribution")
             frame = distribution_frame(distributions["geography"])
             fig = px.pie(
@@ -1043,8 +1628,13 @@ with relationships_tab:
             {
                 "Participant": agent.agent_id,
                 "Age group": agent.summary()["age_group"],
-                "Hearing profile": agent.summary()["hearing_profile"],
-                "Functional status": agent.summary()[
+                "Measured hearing status": agent.summary()[
+                    "measured_hearing_status"
+                ],
+                "Self-reported hearing status": agent.summary()[
+                    "self_reported_hearing_status"
+                ],
+                "Auditory functional status": agent.summary()[
                     "auditory_functional_status"
                 ],
                 "Geography": agent.summary()["geography"],

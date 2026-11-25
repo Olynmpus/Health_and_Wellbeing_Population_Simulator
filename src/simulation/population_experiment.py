@@ -244,6 +244,14 @@ class PopulationExperiment:
                 "hearing_profile": distribution(
                     agent.profile.hearing_profile for agent in self.agents
                 ),
+                "measured_hearing_status": distribution(
+                    agent.profile.measured_hearing_status
+                    for agent in self.agents
+                ),
+                "self_reported_hearing_status": distribution(
+                    agent.profile.self_reported_hearing_status
+                    for agent in self.agents
+                ),
                 "geography": distribution(
                     agent.profile.geography for agent in self.agents
                 ),

@@ -3,10 +3,10 @@
     "experiment_name": "Baseline Australian Health and Wellbeing Help-Seeking Scenario",
     "country_profile": "countries/australia_reference.json",
     "currency_conversion": {
-    	"source_currency": "AUD",
-    	"target_currency": "AUD",
-    	"aud_per_unit": 1.0,
-    	"evidence_status": "simulation_assumption"
+        "source_currency": "AUD",
+        "target_currency": "AUD",
+        "aud_per_unit": 1.0,
+        "evidence_status": "simulation_assumption"
     },
     "population": {
         "size": 1000,
@@ -50,6 +50,15 @@
             "stable",
             "progressive",
             "fluctuating"
+        ],
+        "measured_statuses": [
+            "normal",
+            "mild",
+            "moderate",
+            "severe",
+            "profound",
+            "not_assessed",
+            "unknown"
         ]
     },
     "awareness": {
@@ -79,7 +88,7 @@
         "evidence_status": "simulation_assumption"
     },
     "attendance": {
-        "attendance_probability": 0.80,
+        "attendance_probability": 0.8,
         "evidence_status": "simulation_assumption"
     },
     "evidence_status": "illustrative_assumptions_pending_calibration",
@@ -88,6 +97,15 @@
             "no_identified_difficulty",
             "difficulty_reported",
             "functional_difficulty_confirmed",
+            "unknown"
+        ],
+        "self_reported_statuses": [
+            "no_difficulty",
+            "some_difficulty",
+            "a_lot_of_difficulty",
+            "unable_to_hear",
+            "unsure",
+            "not_asked",
             "unknown"
         ]
     }

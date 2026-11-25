@@ -160,6 +160,8 @@ class TestPopulationExperiment(unittest.TestCase):
             {
                 "age_group",
                 "hearing_profile",
+                "measured_hearing_status",
+                "self_reported_hearing_status",
                 "geography",
                 "functional_status",
             },

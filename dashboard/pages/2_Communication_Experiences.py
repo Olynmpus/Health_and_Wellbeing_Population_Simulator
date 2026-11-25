@@ -576,12 +576,15 @@ with st.expander("Explore the wider synthetic population"):
 
     st.write(
         f"{profile.age_group.replace('_', ' ').title()} · "
-        f"{profile.geography.replace('_', ' ').title()} · "
-        f"{profile.hearing_profile.title()} hearing profile"
+        f"{profile.geography.replace('_', ' ').title()}"
     )
 
     st.caption(
-        f"Functional status: "
+        f"Measured hearing status: "
+        f"{profile.measured_hearing_status.replace('_', ' ').title()} | "
+        f"Self-reported hearing status: "
+        f"{profile.self_reported_hearing_status.replace('_', ' ').title()} | "
+        f"Auditory functional status: "
         f"{profile.auditory_functional_status.replace('_', ' ').title()}"
     )
 

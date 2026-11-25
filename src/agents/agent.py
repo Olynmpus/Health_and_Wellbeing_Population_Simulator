@@ -2,6 +2,26 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 
+MEASURED_HEARING_STATUSES = {
+    "normal",
+    "mild",
+    "moderate",
+    "severe",
+    "profound",
+    "not_assessed",
+    "unknown",
+}
+
+SELF_REPORTED_HEARING_STATUSES = {
+    "no_difficulty",
+    "some_difficulty",
+    "a_lot_of_difficulty",
+    "unable_to_hear",
+    "unsure",
+    "not_asked",
+    "unknown",
+}
+
 AUDITORY_FUNCTIONAL_STATUSES = {
     "no_identified_difficulty",
     "difficulty_reported",
@@ -94,7 +114,13 @@ class AgentProfile:
     age_group: str
     hearing_profile: str
     geography: str
+    age_years: Optional[int] = None
+    measured_any_hearing_impairment: Optional[bool] = None
+    measured_moderate_or_worse_hearing_impairment: Optional[bool] = None
+    self_reported_hearing_loss: Optional[bool] = None
     auditory_functional_status: str = "unknown"
+    measured_hearing_status: str = "unknown"
+    self_reported_hearing_status: str = "unknown"
     role: str = "community_member"
 
     onset_type: str = "unknown"
@@ -116,10 +142,33 @@ class AgentProfile:
                 "AgentCommunicationProfile object."
             )
 
+        for name in (
+            "measured_any_hearing_impairment",
+            "measured_moderate_or_worse_hearing_impairment",
+            "self_reported_hearing_loss",
+        ):
+            value = getattr(self, name)
+            if value is not None and not isinstance(value, bool):
+                raise ValueError(
+                    f"{name} must be True, False or None."
+                )
+
         if self.auditory_functional_status not in AUDITORY_FUNCTIONAL_STATUSES:
             raise ValueError(
                 "Invalid auditory_functional_status: "
                 f"{self.auditory_functional_status}"
+            )
+
+        if self.measured_hearing_status not in MEASURED_HEARING_STATUSES:
+            raise ValueError(
+                "Invalid measured_hearing_status: "
+                f"{self.measured_hearing_status}"
+            )
+
+        if self.self_reported_hearing_status not in SELF_REPORTED_HEARING_STATUSES:
+            raise ValueError(
+                "Invalid self_reported_hearing_status: "
+                f"{self.self_reported_hearing_status}"
             )
 
         self.communication_profile.validate(vocabulary)
@@ -182,7 +231,19 @@ class Agent:
             "current_month": self.current_month,
 
             "age_group": self.profile.age_group,
+            "age_years": self.profile.age_years,
+            "measured_any_hearing_impairment": (
+                self.profile.measured_any_hearing_impairment
+            ),
+            "measured_moderate_or_worse_hearing_impairment": (
+                self.profile.measured_moderate_or_worse_hearing_impairment
+            ),
+            "self_reported_hearing_loss": (
+                self.profile.self_reported_hearing_loss
+            ),
             "hearing_profile": self.profile.hearing_profile,
+            "measured_hearing_status": self.profile.measured_hearing_status,
+            "self_reported_hearing_status": self.profile.self_reported_hearing_status,
             "auditory_functional_status": self.profile.auditory_functional_status,
             "geography": self.profile.geography,
             "role": self.profile.role,

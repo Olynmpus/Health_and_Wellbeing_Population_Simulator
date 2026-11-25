@@ -8,7 +8,8 @@
         "Equal relative weights are used to exercise the generator.",
         "Geographical weights are read from the experiment configuration.",
         "Population characteristics are sampled independently.",
-        "Auditory functional status is sampled independently of audiometric profile."
+        "Auditory functional status is sampled independently of audiometric profile.",
+        "Measured hearing status and self-reported hearing status are independent, uncalibrated simulation assumptions."
     ],
     "weights": {
         "age_groups": {
@@ -39,6 +40,24 @@
             "no_identified_difficulty": 1,
             "difficulty_reported": 1,
             "functional_difficulty_confirmed": 1,
+            "unknown": 1
+        },
+        "measured_hearing_status": {
+            "normal": 1,
+            "mild": 1,
+            "moderate": 1,
+            "severe": 1,
+            "profound": 1,
+            "not_assessed": 1,
+            "unknown": 1
+        },
+        "self_reported_hearing_status": {
+            "no_difficulty": 1,
+            "some_difficulty": 1,
+            "a_lot_of_difficulty": 1,
+            "unable_to_hear": 1,
+            "unsure": 1,
+            "not_asked": 1,
             "unknown": 1
         }
     }
