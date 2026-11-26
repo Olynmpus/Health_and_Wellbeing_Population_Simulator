@@ -9,7 +9,7 @@
         "evidence_status": "simulation_assumption"
     },
     "population": {
-        "size": 1000,
+        "size": 10000,
         "households": {
             "size_weights": {
                 "1": 20,

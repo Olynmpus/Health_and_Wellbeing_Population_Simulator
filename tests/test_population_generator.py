@@ -17,6 +17,7 @@ class TestPopulationGenerator(unittest.TestCase):
         cls.experiment = load_experiment_config(
             PROJECT_ROOT / "config" / "HH-EXP-001.json"
         )
+        cls.experiment["population"]["size"] = 1000
 
         with open(
             PROJECT_ROOT / "config" / "population_baseline.synthetic.json",

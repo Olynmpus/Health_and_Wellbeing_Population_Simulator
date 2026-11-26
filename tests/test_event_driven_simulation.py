@@ -518,6 +518,64 @@ class TestEventDrivenSimulation(unittest.TestCase):
 
 
 
+    def test_failed_response_generation_is_not_recorded_as_occurred(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            simulation = EventDrivenSimulation(
+                self.experiment,
+                start_time=datetime(2026, 1, 1),
+                memory_path=Path(temp_dir) / "memory.db",
+            )
+
+            initiation = SimpleNamespace(
+                event_id="EVENT-000001",
+                communication=CommunicationEvent(
+                    speaker_id="PERSON-001",
+                    listener_id="PERSON-002",
+                    intended_message="Could you help me?",
+                    perceived_message="Could you assist?",
+                    listener_interpretation="They are asking for help.",
+                ),
+            )
+
+            failed_response = SimulationEvent(
+                event_id="EVENT-000002",
+                timestamp=datetime(2026, 1, 1),
+                event_type="communication_response",
+                participants=["PERSON-001", "PERSON-002"],
+                initiating_agent_id="PERSON-002",
+                action="respond",
+                decision_basis={
+                    "message_generation": {
+                        "status": "generation_failed",
+                        "error": "Test generation failure",
+                    }
+                },
+                communication=CommunicationEvent(
+                    speaker_id="PERSON-002",
+                    listener_id="PERSON-001",
+                    intended_message=None,
+                    perceived_message=None,
+                    listener_interpretation=None,
+                ),
+            )
+
+            simulation.record_interaction_memories(
+                initiation,
+                failed_response,
+            )
+
+            for participant_id in ("PERSON-001", "PERSON-002"):
+                record = simulation.memory.get_history(participant_id)[0]
+                response = record["additional_details"]["interaction"]["response"]
+
+                self.assertTrue(response["attempted"])
+                self.assertFalse(response["occurred"])
+                self.assertEqual(
+                    response["generation_status"],
+                    "generation_failed",
+                )
+
+
     @patch(
         "src.simulation.event_driven_simulation.assess_communication_experience"
     )

@@ -1,4 +1,6 @@
 import unittest
+import json
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -102,14 +104,34 @@ class TestHearingAidUseCalibration(unittest.TestCase):
 class TestPopulationExperiment(unittest.TestCase):
 
     def setUp(self):
+        source_config = PROJECT_ROOT / "config" / "HH-EXP-001.json"
+
+        with source_config.open(encoding="utf-8") as file:
+            config = json.load(file)
+
+        config["population"]["size"] = 1000
+
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".json",
+            prefix=".test_population_",
+            dir=PROJECT_ROOT / "config",
+            encoding="utf-8",
+            delete=False,
+        ) as file:
+            json.dump(config, file, indent=4)
+            self.test_config_path = Path(file.name)
+
+        self.addCleanup(self.test_config_path.unlink, missing_ok=True)
+
         self.experiment = run_population_experiment(
-            PROJECT_ROOT / "config" / "HH-EXP-001.json",
+            self.test_config_path,
             PROJECT_ROOT / "config" / "population_baseline.synthetic.json",
         )
 
     def test_repeated_runs_use_sequential_seeds(self):
         runs = run_population_experiment_repetitions(
-            PROJECT_ROOT / "config" / "HH-EXP-001.json",
+            self.test_config_path,
             PROJECT_ROOT / "config" / "population_baseline.synthetic.json",
             repetitions=3,
             base_seed=100,
@@ -121,7 +143,7 @@ class TestPopulationExperiment(unittest.TestCase):
         )
 
     def test_repeated_runs_are_reproducible(self):
-        config = PROJECT_ROOT / "config" / "HH-EXP-001.json"
+        config = self.test_config_path
         distribution = (
             PROJECT_ROOT / "config" / "population_baseline.synthetic.json"
         )
@@ -140,7 +162,7 @@ class TestPopulationExperiment(unittest.TestCase):
 
     def test_repetition_summary_reports_mean_and_variability(self):
         runs = run_population_experiment_repetitions(
-            PROJECT_ROOT / "config" / "HH-EXP-001.json",
+            self.test_config_path,
             PROJECT_ROOT / "config" / "population_baseline.synthetic.json",
             repetitions=2,
             base_seed=300,
@@ -158,7 +180,7 @@ class TestPopulationExperiment(unittest.TestCase):
         )
 
     def test_comparison_requires_matching_seed_sequences(self):
-        config = PROJECT_ROOT / "config" / "HH-EXP-001.json"
+        config = self.test_config_path
         distribution = (
             PROJECT_ROOT / "config" / "population_baseline.synthetic.json"
         )
@@ -196,6 +218,28 @@ class TestPopulationExperiment(unittest.TestCase):
             record.agent_id for record in self.experiment.support_records
         ]
         self.assertEqual(agent_ids, record_ids)
+
+    def test_delivery_month_matches_original_demand_month(self):
+        demand_lookup = {
+            demand.demand_id: demand
+            for record in self.experiment.support_records
+            for demand in record.service_demands
+        }
+
+        deliveries = [
+            delivery
+            for record in self.experiment.support_records
+            for delivery in record.service_deliveries
+        ]
+
+        self.assertTrue(deliveries)
+
+        for delivery in deliveries:
+            self.assertIn(delivery.demand_id, demand_lookup)
+            self.assertEqual(
+                delivery.delivery_month,
+                demand_lookup[delivery.demand_id].request_month,
+            )
 
     def test_experiment_metadata(self):
         self.assertEqual(self.experiment.experiment_id, "HH-EXP-001")

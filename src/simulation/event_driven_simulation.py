@@ -9,6 +9,7 @@ from src.behaviour.llm_interpreter import (
     generate_message,
     interpret_recipient_message,
     assess_communication_experience,
+    MessageGenerationResult,
 )
 from src.behaviour.communication_model import (
     CommunicationEvent,
@@ -373,6 +374,31 @@ class EventDrivenSimulation:
             "simulation_time": self.current_time.isoformat(),
         }
 
+    def build_recipient_interpretation_context(
+        self,
+        agent_id,
+        other_agent_id,
+        relationship,
+        interaction_context=None,
+    ):
+        """Build interpretation context without demographic or hearing labels."""
+
+        context = self.build_agent_context(
+            agent_id,
+            other_agent_id,
+            relationship,
+            interaction_context,
+        )
+        agent_context = context.get("agent", {})
+        profile = agent_context.get("profile", {})
+
+        if isinstance(profile, dict):
+            profile.pop("age_group", None)
+            profile.pop("hearing_profile", None)
+            profile.pop("auditory_functional_status", None)
+
+        return context
+
     def generate_initiation_message(self, initiation_event):
         """Generate the initiating agent's message using private context."""
 
@@ -446,7 +472,7 @@ class EventDrivenSimulation:
         )
 
 
-        context = self.build_agent_context(
+        context = self.build_recipient_interpretation_context(
             recipient_id,
             sender_id,
             relationship,
@@ -828,20 +854,32 @@ class EventDrivenSimulation:
         }:
             return None
 
-        response = self.generate_repair_message(
-            initiation_event,
-            repair_decision,
-        )
-
         communication = initiation_event.communication
         speaker_id = communication.speaker_id
         recipient_id = communication.listener_id
+
+        if repair_decision.action == "repeat_information":
+            original_message = communication.intended_message
+            response = MessageGenerationResult(
+                text=original_message,
+                model="deterministic",
+                status="generated" if original_message else "failed",
+                error=(
+                    None if original_message
+                    else "Original message unavailable"
+                ),
+            )
+        else:
+            response = self.generate_repair_message(
+                initiation_event,
+                repair_decision,
+            )
 
         environment = self.generate_communication_environment()
         interpreted = None
 
         if response.status == "generated" and response.text:
-            context = self.build_agent_context(
+            context = self.build_recipient_interpretation_context(
                 recipient_id,
                 speaker_id,
                 None,
@@ -925,32 +963,38 @@ class EventDrivenSimulation:
         return self.record_event(event)
     
     def make_response_decision(self, initiation_event, incoming_event=None):
-        """Let the recipient independently decide how to respond."""
+        """Let the current listener independently decide how to respond."""
 
         if initiation_event.event_type != "communication_initiation":
             raise ValueError(
                 "A communication initiation event is required."
             )
 
-        initiating_agent_id = initiation_event.initiating_agent_id
-
-        recipient_id = next(
-            participant
-            for participant in initiation_event.participants
-            if participant != initiating_agent_id
+        communication_event = incoming_event or initiation_event
+        communication = getattr(
+            communication_event, "communication", None
         )
+
+        if communication is not None:
+            speaker_id = communication.speaker_id
+            recipient_id = communication.listener_id
+        else:
+            speaker_id = initiation_event.initiating_agent_id
+            recipient_id = next(
+                participant
+                for participant in initiation_event.participants
+                if participant != speaker_id
+            )
 
         relationship = next(
             (
                 item for item in self.relationships
                 if item.agent_id == recipient_id
-                and item.contact_id == initiating_agent_id
+                and item.contact_id == speaker_id
                 and item.status == "active"
             ),
             None,
         )
-
-        communication_event = incoming_event or initiation_event
 
         communication_context = (
             communication_event.decision_basis.get(
@@ -974,7 +1018,7 @@ class EventDrivenSimulation:
 
         return {
             "responding_agent_id": recipient_id,
-            "initiating_agent_id": initiating_agent_id,
+            "initiating_agent_id": speaker_id,
             "relationship": relationship,
             "interaction_context": initiation_event.decision_basis.get(
                 "interaction_context"
@@ -1029,7 +1073,7 @@ class EventDrivenSimulation:
 
         relationship = response_result["relationship"]
 
-        context = self.build_agent_context(
+        context = self.build_recipient_interpretation_context(
             recipient_id,
             sender_id,
             relationship,
@@ -1063,7 +1107,7 @@ class EventDrivenSimulation:
         )
         decision = result["decision"]
 
-        if decision["action"] == "do_nothing":
+        if decision["action"] != "continue_interaction":
             return None
 
         communication_event = incoming_event or initiation_event
@@ -1217,9 +1261,16 @@ class EventDrivenSimulation:
         recipient_id = initial.listener_id
 
         response = (
-            response_event.communication
+            getattr(response_event, "communication", None)
             if response_event is not None
             else None
+        )
+        response_generation = (
+            getattr(response_event, "decision_basis", {}) or {}
+        ).get("message_generation", {}) if response_event is not None else {}
+
+        response_generated = bool(
+            response is not None and response.intended_message
         )
 
         relationship = next(
@@ -1271,7 +1322,12 @@ class EventDrivenSimulation:
             },
             "response": (
                 {
-                    "occurred": True,
+                    "attempted": True,
+                    "occurred": response_generated,
+                    "generation_status": response_generation.get(
+                        "status",
+                        "unknown",
+                    ),
                     "speaker_id": response.speaker_id,
                     "listener_id": response.listener_id,
                     "intended_message": response.intended_message,
@@ -1298,7 +1354,15 @@ class EventDrivenSimulation:
                     },
                 }
                 if response is not None
-                else {"occurred": False}
+                else {
+                    "attempted": response_event is not None,
+                    "occurred": False,
+                    "generation_status": (
+                        response_generation.get("status", "unknown")
+                        if response_event is not None
+                        else "not_attempted"
+                    ),
+                }
             ),
         }
 
@@ -1452,7 +1516,7 @@ class EventDrivenSimulation:
         )
 
     def run_interaction_cycle(self, opportunity=None):
-        """Run one independent initiation and response cycle."""
+        """Run one conversation with a maximum of four spoken messages."""
 
         initiation_event = self.run_initiation_event(opportunity)
 
@@ -1489,16 +1553,44 @@ class EventDrivenSimulation:
                 if repair_communication_event is not None:
                     generated_events.append(repair_communication_event)
 
+        # Count the opening message and any repair message.
+        message_count = 1
         if repair_communication_event is not None:
-            response_event = self.run_response_event(
-                initiation_event,
-                incoming_event=repair_communication_event,
-            )
-        else:
-            response_event = self.run_response_event(initiation_event)
+            message_count += 1
 
-        if response_event is not None:
+        incoming_event = (
+            repair_communication_event
+            if repair_communication_event is not None
+            else initiation_event
+        )
+        response_event = None
+
+        while message_count < 4:
+            if incoming_event is initiation_event:
+                response_event = self.run_response_event(initiation_event)
+            else:
+                response_event = self.run_response_event(
+                    initiation_event,
+                    incoming_event=incoming_event,
+                )
+
+            if response_event is None:
+                break
+
             generated_events.append(response_event)
+
+            communication = getattr(
+                response_event, "communication", None
+            )
+            if (
+                response_event.action != "continue_interaction"
+                or communication is None
+                or not communication.intended_message
+            ):
+                break
+
+            message_count += 1
+            incoming_event = response_event
 
         self.record_interaction_memories(
             initiation_event,

@@ -2,7 +2,8 @@ from pathlib import Path
 from collections import Counter
 import sys
 import math
-
+import json
+import tempfile
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -85,6 +86,152 @@ def distribution_frame(distribution):
         for key, value in distribution.items()
     ])
 
+def build_service_pathway(support_records, month_filter, geography_filter):
+    """Build a population-level Sankey from linked service records."""
+
+    transitions = Counter()
+    people = set()
+    request_count = 0
+    allocation_counts = Counter()
+    delivery_counts = Counter()
+
+    for record in support_records:
+        geography = record.agent.profile.geography
+
+        if geography_filter != "All" and geography != geography_filter:
+            continue
+
+        allocations = {
+            item.demand_id: item for item in record.service_allocations
+        }
+        deliveries = {
+            item.demand_id: item for item in record.service_deliveries
+        }
+
+        for demand in record.service_demands:
+            if (
+                month_filter is not None
+                and demand.request_month != month_filter
+            ):
+                continue
+
+            request_count += 1
+            people.add(record.agent_id)
+
+            allocation = allocations.get(demand.demand_id)
+            delivery = deliveries.get(demand.demand_id)
+
+            if allocation is None:
+                allocation_label = "Allocation not recorded"
+            elif allocation.allocation_status == "allocated":
+                allocation_label = "Allocated"
+            else:
+                allocation_label = "Not allocated"
+
+            allocation_counts[allocation_label] += 1
+
+            transitions[
+                (("Requests", "Service requests"),
+                 ("Allocation", allocation_label))
+            ] += 1
+
+            if allocation_label != "Allocated":
+                continue
+
+            if delivery is None:
+                attendance_label = "Attendance not recorded"
+                delivery_label = "Delivery not recorded"
+            else:
+                attendance_label = {
+                    "attended": "Attended",
+                    "did_not_attend": "Did not attend",
+                    "not_yet_due": "Not yet due",
+                    "unknown": "Attendance unknown",
+                }.get(
+                    delivery.attendance_status,
+                    "Attendance unknown",
+                )
+
+                delivery_label = {
+                    "delivered": "Delivered",
+                    "not_delivered": "Not delivered",
+                    "unknown": "Delivery unknown",
+                }.get(
+                    delivery.delivery_status,
+                    "Delivery unknown",
+                )
+
+            delivery_counts[delivery_label] += 1
+
+            transitions[
+                (("Allocation", allocation_label),
+                 ("Attendance", attendance_label))
+            ] += 1
+
+            transitions[
+                (("Attendance", attendance_label),
+                 ("Delivery", delivery_label))
+            ] += 1
+
+    metrics = {
+        "requests": request_count,
+        "people": len(people),
+        "allocated": allocation_counts["Allocated"],
+        "delivered": delivery_counts["Delivered"],
+    }
+
+    if not request_count:
+        return None, metrics
+
+    stage_order = {
+        "Requests": 0,
+        "Allocation": 1,
+        "Attendance": 2,
+        "Delivery": 3,
+    }
+
+    node_keys = {
+        node
+        for source, target in transitions
+        for node in (source, target)
+    }
+    node_keys = sorted(
+        node_keys,
+        key=lambda node: (stage_order[node[0]], node[1]),
+    )
+    node_ids = {node: index for index, node in enumerate(node_keys)}
+
+    fig = go.Figure(go.Sankey(
+        arrangement="snap",
+        node=dict(
+            label=[label for _, label in node_keys],
+            x=[stage_order[stage] / 3 for stage, _ in node_keys],
+            pad=18,
+            thickness=18,
+            line=dict(color="#CBD5E1", width=0.7),
+        ),
+        link=dict(
+            source=[
+                node_ids[source]
+                for source, target in transitions
+            ],
+            target=[
+                node_ids[target]
+                for source, target in transitions
+            ],
+            value=list(transitions.values()),
+            hovertemplate="%{value} requests<extra></extra>",
+        ),
+    ))
+
+    fig.update_layout(
+        height=470,
+        margin=dict(l=15, r=15, t=20, b=20),
+        paper_bgcolor="#FFFFFF",
+        font=dict(color="#243247", size=12),
+    )
+
+    return fig, metrics
 
 def outcome_group(outcome):
     if outcome in {
@@ -541,13 +688,11 @@ st.info(
     "wellbeing model is under development."
 )
 
-overview_tab, population_explorer_tab, relationships_tab, timeline_tab, experiment_tab, research_tab = st.tabs([
-    "Population",
-    "Explore",
-    "Relationships",
-    "Experiences",
+overview_tab, journeys_tab, analytics_tab, experiment_tab = st.tabs([
+    "Overview",
+    "Journeys",
+    "Analytics",
     "Experiment Lab",
-    "Analyse",
 ])
 
 
@@ -601,265 +746,7 @@ with overview_tab:
 
 
 # Population journey explorer
-with population_explorer_tab:
-    st.subheader("Combined human journey map")
-    st.caption(
-        "A shared view of recorded experiences across the four participants. "
-        "Each coloured route represents one participant."
-    )
-
-    participant_order = list(histories.keys())
-    participant_colours = [
-        "#2878B5", "#D47735", "#269B79", "#8957A5",
-        "#C45A75", "#687786",
-    ]
-    participant_colour_map = {
-        participant_id: participant_colours[index % len(participant_colours)]
-        for index, participant_id in enumerate(participant_order)
-    }
-    lane_positions = {
-        participant_id: index
-        for index, participant_id in enumerate(participant_order)
-    }
-
-    outcome_symbols = {
-        "negative_communication": "circle",
-        "misdirected_information": "diamond",
-        "supportive_communication": "square",
-        "blocked_service_access": "triangle-up",
-    }
-    event_labels = {
-        "family_interaction": "Family",
-        "social_interaction": "Social",
-        "service_interaction": "Service",
-    }
-
-    combined_rows = []
-    interaction_groups = {}
-
-    for participant_id in participant_order:
-        records = sorted(
-            histories[participant_id],
-            key=lambda record: record.get("month", 0),
-        )
-
-        for record in records:
-            details = record.get("additional_details", {})
-            if not isinstance(details, dict):
-                details = {}
-
-            interaction_id = details.get("interaction_id")
-            event_type = record.get("event_type", "other")
-            outcome = record.get("outcome", "not_established")
-
-            row = {
-                "participant": participant_id,
-                "month": record.get("month", 0),
-                "event_type": event_type,
-                "event_label": event_labels.get(
-                    event_type, event_type.replace("_", " ").title()
-                ),
-                "outcome": outcome,
-                "interaction_id": interaction_id,
-            }
-            combined_rows.append(row)
-
-            if interaction_id:
-                interaction_groups.setdefault(
-                    interaction_id, []
-                ).append(row)
-
-    if combined_rows:
-        combined_fig = go.Figure()
-
-        # Draw shared-interaction connectors behind the participant routes.
-        shared_interactions = {
-            interaction_id: rows
-            for interaction_id, rows in interaction_groups.items()
-            if len({row["participant"] for row in rows}) > 1
-        }
-
-        for interaction_id, rows in shared_interactions.items():
-            month = rows[0]["month"]
-            positions = [
-                lane_positions[row["participant"]]
-                for row in rows
-            ]
-
-            combined_fig.add_shape(
-                type="line",
-                x0=month,
-                x1=month,
-                y0=min(positions),
-                y1=max(positions),
-                line={
-                    "color": "#D6A83D",
-                    "width": 3,
-                    "dash": "dot",
-                },
-                layer="below",
-            )
-
-        # Draw each participant as a separate coloured route.
-        for participant_id in participant_order:
-            rows = sorted(
-                [
-                    row for row in combined_rows
-                    if row["participant"] == participant_id
-                ],
-                key=lambda row: row["month"],
-            )
-            if not rows:
-                continue
-
-            combined_fig.add_trace(go.Scatter(
-                x=[row["month"] for row in rows],
-                y=[lane_positions[participant_id]] * len(rows),
-                mode="lines+markers+text",
-                name=participant_id,
-                text=[row["event_label"] for row in rows],
-                textposition="top center",
-                textfont={"size": 10},
-                line={
-                    "color": participant_colour_map[participant_id],
-                    "width": 4,
-                },
-                marker={
-                    "size": 17,
-                    "color": participant_colour_map[participant_id],
-                    "symbol": [
-                        outcome_symbols.get(
-                            row["outcome"], "circle-open"
-                        )
-                        for row in rows
-                    ],
-                    "line": {"color": "#FFFFFF", "width": 2},
-                },
-                customdata=[
-                    [
-                        row["event_type"].replace("_", " ").title(),
-                        row["outcome"].replace("_", " ").title(),
-                        row["interaction_id"] or "Not recorded",
-                    ]
-                    for row in rows
-                ],
-                hovertemplate=(
-                    "<b>%{fullData.name}</b><br>"
-                    "Month: %{x}<br>"
-                    "Event: %{customdata[0]}<br>"
-                    "Outcome: %{customdata[1]}<br>"
-                    "Shared interaction: %{customdata[2]}"
-                    "<extra></extra>"
-                ),
-            ))
-
-        # Highlight events that belong to a shared interaction.
-        shared_points = [
-            row for rows in shared_interactions.values()
-            for row in rows
-        ]
-        if shared_points:
-            combined_fig.add_trace(go.Scatter(
-                x=[row["month"] for row in shared_points],
-                y=[
-                    lane_positions[row["participant"]]
-                    for row in shared_points
-                ],
-                mode="markers",
-                name="Shared interaction",
-                marker={
-                    "symbol": "diamond-open",
-                    "size": 27,
-                    "color": "#D6A83D",
-                    "line": {"width": 3},
-                },
-                customdata=[
-                    [
-                        row["participant"],
-                        row["interaction_id"],
-                    ]
-                    for row in shared_points
-                ],
-                hovertemplate=(
-                    "<b>Shared interaction</b><br>"
-                    "%{customdata[0]}<br>"
-                    "ID: %{customdata[1]}<br>"
-                    "Month: %{x}<extra></extra>"
-                ),
-            ))
-
-        # Add a compact outcome key using marker shapes.
-        for outcome, symbol in outcome_symbols.items():
-            combined_fig.add_trace(go.Scatter(
-                x=[None],
-                y=[None],
-                mode="markers",
-                name=outcome.replace("_", " ").title(),
-                marker={
-                    "symbol": symbol,
-                    "size": 11,
-                    "color": "#526174",
-                },
-                showlegend=True,
-                hoverinfo="skip",
-            ))
-
-        combined_fig.update_layout(
-            height=max(390, 115 * len(participant_order)),
-            paper_bgcolor="#FFFFFF",
-            plot_bgcolor="#FFFFFF",
-            font={"color": "#243247", "size": 12},
-            margin={"l": 15, "r": 20, "t": 35, "b": 100},
-            xaxis={
-                "title": "Simulation month",
-                "tickmode": "linear",
-                "dtick": 1,
-                "showgrid": True,
-                "gridcolor": "#E2E8F0",
-                "zeroline": False,
-            },
-            yaxis={
-                "title": "",
-                "tickmode": "array",
-                "tickvals": list(range(len(participant_order))),
-                "ticktext": participant_order,
-                "autorange": "reversed",
-                "showgrid": True,
-                "gridcolor": "#E2E8F0",
-                "zeroline": False,
-            },
-            legend={
-                "orientation": "h",
-                "yanchor": "top",
-                "y": -0.2,
-                "x": 0,
-                "font": {"size": 10},
-            },
-            hovermode="closest",
-        )
-
-        st.plotly_chart(combined_fig, width="stretch")
-
-        summary_columns = st.columns(len(participant_order))
-        for column, participant_id in zip(
-            summary_columns, participant_order
-        ):
-            event_count = sum(
-                row["participant"] == participant_id
-                for row in combined_rows
-            )
-            with column:
-                st.metric(participant_id, event_count, "recorded events")
-
-        st.caption(
-            "Route colours identify participants. Marker shapes identify "
-            "recorded outcomes. Gold diamond outlines and dotted connectors "
-            "identify shared interactions. Route lines show chronology, "
-            "not causation. Only recorded events are displayed."
-        )
-    else:
-        st.info("No recorded participant events are available.")
-
+with journeys_tab:
     st.subheader("Individual journey map")
     st.caption(
         "Four-month illustrative demonstration. This is separate from "
@@ -1069,6 +956,7 @@ with population_explorer_tab:
     else:
         st.info("No recorded events are available for this participant.")
 
+with analytics_tab:
     st.subheader("What happens to the population?")
     st.write(
         "Start with everyone in the selected population, then follow "
@@ -1160,8 +1048,9 @@ with population_explorer_tab:
 
     allocated = allocation_counts["allocated"]
     unallocated = allocation_counts["unallocated"]
+    request_count = len(selected_demands)
     allocation_not_recorded = max(
-        0, len(selected_demands) - len(allocations_by_demand)
+        0, request_count - len(allocations_by_demand)
     )
 
     attendance_counts = Counter(
@@ -1258,7 +1147,164 @@ with population_explorer_tab:
         st.info("No people match this population group.")
 
     st.divider()
-    st.markdown("#### 2. Population journey map")
+    st.markdown("#### 2. Population service pathway")
+    st.caption(
+        "Each flow represents one recorded service demand. Follow requests "
+        "through allocation, attendance and service delivery. Missing records "
+        "are shown separately rather than treated as negative outcomes."
+    )
+
+    attendance_node = {
+        "attended": 4,
+        "did_not_attend": 5,
+        "unknown": 6,
+        "not_yet_due": 7,
+    }
+    delivery_node = {
+        "delivered": 9,
+        "not_delivered": 10,
+        "unknown": 11,
+    }
+
+    sankey_missing_delivery = sum(
+        1
+        for demand_id, allocation in allocations_by_demand.items()
+        if (
+            allocation.allocation_status == "allocated"
+            and demand_id not in deliveries_by_demand
+        )
+    )
+
+    sankey_attendance_counts = Counter()
+    sankey_delivery_counts = Counter()
+    attendance_delivery_counts = Counter()
+
+    for demand_id, allocation in allocations_by_demand.items():
+        if allocation.allocation_status != "allocated":
+            continue
+
+        delivery = deliveries_by_demand.get(demand_id)
+        if delivery is None:
+            continue
+
+        sankey_attendance_counts[delivery.attendance_status] += 1
+        sankey_delivery_counts[delivery.delivery_status] += 1
+        attendance_delivery_counts[
+            (delivery.attendance_status, delivery.delivery_status)
+        ] += 1
+
+    sankey_labels = [
+        f"Service requests ({request_count})",
+        f"Allocated ({allocated})",
+        f"Unallocated ({unallocated})",
+        f"Allocation not recorded ({allocation_not_recorded})",
+        f"Attended ({sankey_attendance_counts['attended']})",
+        f"Did not attend ({sankey_attendance_counts['did_not_attend']})",
+        f"Attendance unknown ({sankey_attendance_counts['unknown']})",
+        f"Not yet due ({sankey_attendance_counts['not_yet_due']})",
+        f"No delivery record ({sankey_missing_delivery})",
+        f"Delivered ({sankey_delivery_counts['delivered']})",
+        f"Not delivered ({sankey_delivery_counts['not_delivered']})",
+        f"Delivery status unknown ({sankey_delivery_counts['unknown']})",
+    ]
+
+    sankey_sources = []
+    sankey_targets = []
+    sankey_values = []
+
+    def add_sankey_link(source_index, target_index, value):
+        if value > 0:
+            sankey_sources.append(source_index)
+            sankey_targets.append(target_index)
+            sankey_values.append(value)
+
+    add_sankey_link(0, 1, allocated)
+    add_sankey_link(0, 2, unallocated)
+    add_sankey_link(0, 3, allocation_not_recorded)
+
+    for demand_id, allocation in allocations_by_demand.items():
+        if allocation.allocation_status != "allocated":
+            continue
+
+        delivery = deliveries_by_demand.get(demand_id)
+        if delivery is None:
+            add_sankey_link(1, 8, 1)
+            continue
+
+        add_sankey_link(
+            1,
+            attendance_node[delivery.attendance_status],
+            1,
+        )
+
+    for (attendance_status, delivery_status), count in (
+        attendance_delivery_counts.items()
+    ):
+        add_sankey_link(
+            attendance_node[attendance_status],
+            delivery_node[delivery_status],
+            count,
+        )
+
+    if request_count:
+        journey_fig = go.Figure(go.Sankey(
+            arrangement="fixed",
+            node={
+                "label": sankey_labels,
+                "x": [
+                    0.01,
+                    0.34, 0.34, 0.34,
+                    0.67, 0.67, 0.67, 0.67, 0.67,
+                    0.98, 0.98, 0.98,
+                ],
+                "y": [
+                    0.5,
+                    0.15, 0.5, 0.85,
+                    0.05, 0.25, 0.45, 0.65, 0.88,
+                    0.15, 0.5, 0.85,
+                ],
+                "pad": 18,
+                "thickness": 20,
+                "line": {"color": "#FFFFFF", "width": 1},
+                "color": [
+                    "#64748B",
+                    "#0D9488", "#F59E0B", "#CBD5E1",
+                    "#0D9488", "#F59E0B", "#CBD5E1", "#CBD5E1",
+                    "#94A3B8",
+                    "#16A34A", "#F59E0B", "#CBD5E1",
+                ],
+            },
+            link={
+                "source": sankey_sources,
+                "target": sankey_targets,
+                "value": sankey_values,
+                "color": "rgba(100, 116, 139, 0.25)",
+                "hovertemplate": (
+                    "%{value:,} service demands"
+                    "<extra></extra>"
+                ),
+            },
+        ))
+
+        journey_fig.update_layout(
+            height=540,
+            paper_bgcolor="#FFFFFF",
+            plot_bgcolor="#FFFFFF",
+            font={"color": "#243247", "size": 12},
+            margin={"l": 10, "r": 10, "t": 20, "b": 20},
+        )
+        st.plotly_chart(journey_fig, width="stretch")
+    else:
+        st.info("No service requests were recorded for this population group.")
+
+    st.caption(
+        "Flows count service demands, not unique people. Only allocated "
+        "requests receive attendance and delivery records in the current "
+        "simulation. Delivery status is currently determined directly by "
+        "attendance; it is not an independent clinical outcome."
+    )
+
+    st.markdown("#### 3. Recorded service pathway")
     st.caption(
         "Unique people reaching each recorded service checkpoint. "
         "A person is counted once at each checkpoint, even if they have "
@@ -1610,7 +1656,7 @@ with population_explorer_tab:
 
 
 # Relationships
-with relationships_tab:
+with journeys_tab:
     st.subheader("Population household relationships")
     st.write(
         "Explore the simulated social network, including family, friendship "
@@ -1825,7 +1871,7 @@ with relationships_tab:
         "direct contacts are included where recorded."
     )
 # Timeline and interactions
-with timeline_tab:
+with journeys_tab:
     st.subheader("Individual experience over time")
 
     months = [snapshot["month"] for snapshot in snapshots]
@@ -1952,15 +1998,38 @@ with timeline_tab:
 
 # Experiment runner
 with experiment_tab:
-    st.subheader("Run and compare population scenarios")
+    
+    st.subheader("Configure and compare population scenarios")
+
     st.write(
-        "Run repeated baseline and intervention experiments with matching "
-        "random seeds. Compare average service outcomes and variation "
-        "between runs."
+        "Change the population and service assumptions, then compare "
+        "baseline and mobile outreach using matching random seeds."
     )
 
-    control1, control2 = st.columns(2)
-    with control1:
+    st.markdown("#### Population and simulation")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        population_size = st.number_input(
+            "Population size",
+            min_value=1000,
+            max_value=100000,
+            value=10000,
+            step=1000,
+            help="Number of synthetic people generated in each experiment.",
+        )
+
+    with col2:
+        duration_months = st.number_input(
+            "Simulation duration (months)",
+            min_value=1,
+            max_value=60,
+            value=12,
+            step=1,
+        )
+
+    with col3:
         repetitions = st.number_input(
             "Number of repetitions",
             min_value=1,
@@ -1969,34 +2038,152 @@ with experiment_tab:
             step=1,
             help="Each repetition uses a different sequential random seed.",
         )
-    with control2:
-        base_seed = st.number_input(
-            "Starting random seed",
+
+    st.markdown("#### Population geography")
+
+    geo1, geo2, geo3 = st.columns(3)
+
+    with geo1:
+        metropolitan_pct = st.slider(
+            "Metropolitan (%)",
             min_value=0,
-            max_value=2147483647,
-            value=42,
+            max_value=100,
+            value=55,
             step=1,
         )
 
+    with geo2:
+        regional_pct = st.slider(
+            "Regional (%)",
+            min_value=0,
+            max_value=100 - metropolitan_pct,
+            value=min(35, 100 - metropolitan_pct),
+            step=1,
+        )
+
+    remote_pct = 100 - metropolitan_pct - regional_pct
+
+    with geo3:
+        st.metric("Remote / very remote (%)", remote_pct)
+
     st.caption(
-        "Both scenarios use the same seed sequence. This supports paired "
-        "comparisons and helps separate scenario differences from random "
-        "variation."
+        "The three geographical percentages always add up to 100%."
     )
 
-    if st.button("Run baseline and intervention comparison", type="primary"):
+    st.markdown("#### Service assumptions")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        demand_probability = st.slider(
+            "Annual service request probability",
+            min_value=0.0,
+            max_value=1.0,
+            value=0.07,
+            step=0.01,
+            help="Configured probability used by the service-demand generator.",
+        )
+
+    with col2:
+        attendance_probability = st.slider(
+            "Appointment attendance probability",
+            min_value=0.0,
+            max_value=1.0,
+            value=0.80,
+            step=0.01,
+            help="Probability that a person attends an allocated appointment.",
+        )
+
+    st.markdown("#### Reproducibility")
+
+    base_seed = st.number_input(
+        "Starting random seed",
+        min_value=0,
+        max_value=2147483647,
+        value=42,
+        step=1,
+    )
+
+    st.caption(
+        "Baseline and intervention experiments use the same sequence of "
+        "random seeds. This supports paired scenario comparisons."
+    )
+
+    st.markdown("#### Configuration summary")
+
+    st.dataframe(
+        pd.DataFrame([
+            {"Parameter": "Population size", "Value": population_size},
+            {"Parameter": "Duration (months)", "Value": duration_months},
+            {"Parameter": "Metropolitan (%)", "Value": metropolitan_pct},
+            {"Parameter": "Regional (%)", "Value": regional_pct},
+            {"Parameter": "Remote / very remote (%)", "Value": remote_pct},
+            {"Parameter": "Annual demand probability", "Value": demand_probability},
+            {"Parameter": "Attendance probability", "Value": attendance_probability},
+            {"Parameter": "Starting random seed", "Value": base_seed},
+            {"Parameter": "Repetitions per scenario", "Value": repetitions},
+        ]),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    if st.button(
+        "Run baseline and intervention comparison",
+        type="primary",
+    ):
+        temporary_config_path = None
+
         try:
+            with CONFIG.open("r", encoding="utf-8") as file:
+                experiment_config = json.load(file)
+
+            experiment_config["population"]["size"] = int(population_size)
+
+            experiment_config["population"]["geography"] = {
+                "metropolitan": int(metropolitan_pct),
+                "regional": int(regional_pct),
+                "remote_very_remote": int(remote_pct),
+            }
+
+            experiment_config["simulation"]["duration_months"] = int(
+                duration_months
+            )
+
+            experiment_config["simulation"]["random_seed"] = int(base_seed)
+
+            experiment_config["demand"]["annual_request_probability"] = (
+                float(demand_probability)
+            )
+
+            experiment_config["attendance"]["attendance_probability"] = (
+                float(attendance_probability)
+            )
+
+            # Keep the temporary file beside the original configuration.
+            # This preserves the relative country-profile path.
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                suffix=".json",
+                prefix=".dashboard_experiment_",
+                dir=CONFIG.parent,
+                encoding="utf-8",
+                delete=False,
+            ) as temporary_file:
+                json.dump(experiment_config, temporary_file, indent=4)
+                temporary_config_path = Path(temporary_file.name)
+
             with st.spinner(
-                f"Running {repetitions * 2} population experiments..."
+                f"Running {int(repetitions) * 2} population experiments..."
             ):
                 baseline_runs = run_population_experiment_repetitions(
-                    str(CONFIG),
+                    str(temporary_config_path),
                     str(DISTRIBUTION),
                     repetitions=int(repetitions),
                     base_seed=int(base_seed),
                 )
+
                 intervention_runs = run_population_experiment_repetitions(
-                    str(CONFIG),
+                    str(temporary_config_path),
                     str(DISTRIBUTION),
                     str(INTERVENTION),
                     repetitions=int(repetitions),
@@ -2009,12 +2196,29 @@ with experiment_tab:
                         intervention_runs,
                     )
                 )
+
+                st.session_state["experiment_parameters"] = {
+                    "population_size": int(population_size),
+                    "duration_months": int(duration_months),
+                    "metropolitan_pct": int(metropolitan_pct),
+                    "regional_pct": int(regional_pct),
+                    "remote_pct": int(remote_pct),
+                    "demand_probability": float(demand_probability),
+                    "attendance_probability": float(attendance_probability),
+                    "base_seed": int(base_seed),
+                    "repetitions": int(repetitions),
+                }
+
             st.success("Experiment comparison completed.")
+
         except Exception as error:
             st.error(f"The experiment comparison failed: {error}")
 
-    comparison = st.session_state.get("experiment_comparison")
+        finally:
+            if temporary_config_path is not None:
+                temporary_config_path.unlink(missing_ok=True)
 
+    comparison = st.session_state.get("experiment_comparison")
     if comparison:
         baseline_results = comparison["baseline"]["metrics"]
         intervention_results = comparison["intervention"]["metrics"]
@@ -2113,7 +2317,7 @@ with experiment_tab:
 
 
 # Research exploration
-with research_tab:
+with analytics_tab:
     st.subheader("Explore a research question")
 
     question = st.selectbox(

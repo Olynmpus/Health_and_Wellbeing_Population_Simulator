@@ -631,15 +631,27 @@ def record_monthly_service_delivery(
     rng = random.Random(seed + 2 if seed is not None else None)
 
     for record in support_records:
+        demand_lookup = {
+            demand.demand_id: demand
+            for demand in record.service_demands
+        }
+
         for allocation in record.service_allocations:
             if allocation.allocation_status != "allocated":
                 continue
+
+            demand = demand_lookup.get(allocation.demand_id)
+            if demand is None:
+                raise ValueError(
+                    f"No service demand found for allocation: "
+                    f"{allocation.demand_id}"
+                )
 
             attended = rng.random() < probability
 
             delivery = create_service_delivery(
                 allocation=allocation,
-                delivery_month=allocation_month(allocation),
+                delivery_month=demand.request_month,
                 attendance_status=(
                     "attended" if attended else "did_not_attend"
                 ),

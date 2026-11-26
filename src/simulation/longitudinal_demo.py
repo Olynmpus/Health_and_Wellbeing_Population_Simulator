@@ -308,11 +308,60 @@ def run_experiment(database_path, enable_llm=False, enable_autonomous=False):
             random_seed=42,
         )
 
+        contextual_opportunities = [
+            {
+                "agent_id": "PERSON-001",
+                "contact_id": "FAMILY-001",
+                "context": {
+                    "setting": "home",
+                    "purpose": "everyday_family_conversation",
+                },
+                "interactions_per_month": 1.5,
+            },
+            {
+                "agent_id": "PERSON-001",
+                "contact_id": "FRIEND-001",
+                "context": {
+                    "setting": "community",
+                    "purpose": "social_activity",
+                },
+                "interactions_per_month": 1.5,
+            },
+            {
+                "agent_id": "PERSON-001",
+                "contact_id": "SERVICE-001",
+                "context": {
+                    "setting": "phone",
+                    "purpose": "service_information",
+                },
+                "interactions_per_month": 1.0,
+            },
+            {
+                "agent_id": "FAMILY-001",
+                "contact_id": "FRIEND-001",
+                "context": {
+                    "setting": "social_gathering",
+                    "purpose": "community_conversation",
+                },
+                "interactions_per_month": 0.75,
+            },
+            {
+                "agent_id": "FAMILY-001",
+                "contact_id": "SERVICE-001",
+                "context": {
+                    "setting": "service",
+                    "purpose": "family_support_discussion",
+                },
+                "interactions_per_month": 0.5,
+            },
+        ]
+
         autonomous_simulation = EventDrivenSimulation(
             autonomous_experiment,
             start_time=datetime(2026, 1, 1),
             random_seed=42,
             memory_path=autonomous_database_path,
+            contextual_opportunities=contextual_opportunities,
         )
 
     memory = MemoryStore(database_path)
@@ -488,6 +537,10 @@ def run_experiment(database_path, enable_llm=False, enable_autonomous=False):
 
             snapshots[-1]["autonomous_interactions"] = sum(
                 record.get("event_type") == "communication_interaction"
+                and record.get("additional_details", {})
+                .get("interaction", {})
+                .get("response", {})
+                .get("occurred") is True
                 for record in autonomous_history
             )
             snapshots[-1]["autonomous_initiations"] = len(
@@ -498,6 +551,18 @@ def run_experiment(database_path, enable_llm=False, enable_autonomous=False):
                     "message_generation", {}
                 ).get("status") not in (None, "generated")
                 for event in initiation_events
+            )
+
+            response_events = [
+                event for event in autonomous_events
+                if event.event_type == "communication_response"
+            ]
+
+            snapshots[-1]["autonomous_response_generation_failures"] = sum(
+                event.decision_basis.get(
+                    "message_generation", {}
+                ).get("status") not in (None, "generated")
+                for event in response_events
             )
 
             snapshots[-1]["autonomous_generation_errors"] = [
@@ -543,7 +608,8 @@ if __name__ == "__main__":
         if "autonomous_interactions" in snapshot:
             print(f"  Autonomous initiations: {snapshot['autonomous_initiations']}")
             print(f"  Autonomous completed interactions: {snapshot['autonomous_interactions']}")
-            print(f"  Message generation failures: {snapshot['autonomous_message_generation_failures']}")
+            print(f"  Initiation message generation failures: {snapshot['autonomous_message_generation_failures']}")
+            print(f"  Response message generation failures: {snapshot['autonomous_response_generation_failures']}")
 
             for error in snapshot["autonomous_generation_errors"]:
                 print(
