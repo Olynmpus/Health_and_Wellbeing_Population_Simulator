@@ -22,6 +22,9 @@ from dashboard.shared import load_longitudinal
 CONFIG = ROOT / "config" / "HH-EXP-001.json"
 DISTRIBUTION = ROOT / "config" / "population_australia_2025.json"
 INTERVENTION = ROOT / "config" / "interventions" / "mobile_hearing_outreach.json"
+DEFAULT_POPULATION_SIZE = json.loads(
+    CONFIG.read_text(encoding="utf-8")
+)["population"]["size"]
 
 
 st.set_page_config(
@@ -69,12 +72,13 @@ st.markdown("""
 
 
 @st.cache_resource(show_spinner="Running population experiment...")
-def load_population(use_intervention):
+def load_population(use_intervention, population_size):
     intervention_path = str(INTERVENTION) if use_intervention else None
     return run_population_experiment(
         str(CONFIG),
         str(DISTRIBUTION),
         intervention_path,
+        population_size_override=population_size,
     )
 
 
@@ -641,6 +645,14 @@ def make_individual_network(agents, relationships, selected_agent_id):
 # Sidebar
 st.sidebar.markdown("## Reference experiment controls")
 
+population_size = st.sidebar.number_input(
+    "Population size",
+    min_value=1,
+    value=DEFAULT_POPULATION_SIZE,
+    step=1000,
+    help="Number of synthetic people generated for this experiment.",
+)
+
 scenario = st.sidebar.selectbox(
     "Population scenario",
     ["Baseline", "Mobile hearing outreach"],
@@ -660,7 +672,7 @@ st.sidebar.caption(
 use_intervention = scenario == "Mobile hearing outreach"
 
 try:
-    population = load_population(use_intervention)
+    population = load_population(use_intervention, population_size)
     summary = population.summary()
     person, relationships, histories, snapshots = load_longitudinal(enable_llm)
 except Exception as error:
@@ -1154,6 +1166,52 @@ with analytics_tab:
         "are shown separately rather than treated as negative outcomes."
     )
 
+    pathway_months = sorted({
+        demand.request_month for demand in selected_demands
+    })
+
+    selected_request_month = st.selectbox(
+        "Service request month",
+        ["All months"] + pathway_months,
+        format_func=lambda month: (
+            month if month == "All months" else f"Month {month}"
+        ),
+        key="service_pathway_month",
+    )
+
+    pathway_demands = [
+        demand for demand in selected_demands
+        if (
+            selected_request_month == "All months"
+            or demand.request_month == selected_request_month
+        )
+    ]
+    pathway_demand_ids = {
+        demand.demand_id for demand in pathway_demands
+    }
+
+    pathway_allocations = {
+        demand_id: allocation
+        for demand_id, allocation in allocations_by_demand.items()
+        if demand_id in pathway_demand_ids
+    }
+    pathway_deliveries = {
+        demand_id: delivery
+        for demand_id, delivery in deliveries_by_demand.items()
+        if demand_id in pathway_demand_ids
+    }
+
+    pathway_request_count = len(pathway_demands)
+    pathway_allocation_counts = Counter(
+        allocation.allocation_status
+        for allocation in pathway_allocations.values()
+    )
+    pathway_allocated = pathway_allocation_counts["allocated"]
+    pathway_unallocated = pathway_allocation_counts["unallocated"]
+    pathway_allocation_not_recorded = max(
+        0, pathway_request_count - len(pathway_allocations)
+    )
+
     attendance_node = {
         "attended": 4,
         "did_not_attend": 5,
@@ -1168,10 +1226,10 @@ with analytics_tab:
 
     sankey_missing_delivery = sum(
         1
-        for demand_id, allocation in allocations_by_demand.items()
+        for demand_id, allocation in pathway_allocations.items()
         if (
             allocation.allocation_status == "allocated"
-            and demand_id not in deliveries_by_demand
+            and demand_id not in pathway_deliveries
         )
     )
 
@@ -1179,11 +1237,11 @@ with analytics_tab:
     sankey_delivery_counts = Counter()
     attendance_delivery_counts = Counter()
 
-    for demand_id, allocation in allocations_by_demand.items():
+    for demand_id, allocation in pathway_allocations.items():
         if allocation.allocation_status != "allocated":
             continue
 
-        delivery = deliveries_by_demand.get(demand_id)
+        delivery = pathway_deliveries.get(demand_id)
         if delivery is None:
             continue
 
@@ -1194,10 +1252,10 @@ with analytics_tab:
         ] += 1
 
     sankey_labels = [
-        f"Service requests ({request_count})",
-        f"Allocated ({allocated})",
-        f"Unallocated ({unallocated})",
-        f"Allocation not recorded ({allocation_not_recorded})",
+        f"Service requests ({pathway_request_count})",
+        f"Allocated ({pathway_allocated})",
+        f"Unallocated ({pathway_unallocated})",
+        f"Allocation not recorded ({pathway_allocation_not_recorded})",
         f"Attended ({sankey_attendance_counts['attended']})",
         f"Did not attend ({sankey_attendance_counts['did_not_attend']})",
         f"Attendance unknown ({sankey_attendance_counts['unknown']})",
@@ -1218,15 +1276,15 @@ with analytics_tab:
             sankey_targets.append(target_index)
             sankey_values.append(value)
 
-    add_sankey_link(0, 1, allocated)
-    add_sankey_link(0, 2, unallocated)
-    add_sankey_link(0, 3, allocation_not_recorded)
+    add_sankey_link(0, 1, pathway_allocated)
+    add_sankey_link(0, 2, pathway_unallocated)
+    add_sankey_link(0, 3, pathway_allocation_not_recorded)
 
-    for demand_id, allocation in allocations_by_demand.items():
+    for demand_id, allocation in pathway_allocations.items():
         if allocation.allocation_status != "allocated":
             continue
 
-        delivery = deliveries_by_demand.get(demand_id)
+        delivery = pathway_deliveries.get(demand_id)
         if delivery is None:
             add_sankey_link(1, 8, 1)
             continue
@@ -1246,7 +1304,7 @@ with analytics_tab:
             count,
         )
 
-    if request_count:
+    if pathway_request_count:
         journey_fig = go.Figure(go.Sankey(
             arrangement="fixed",
             node={

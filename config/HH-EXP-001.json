@@ -108,5 +108,24 @@
             "not_asked",
             "unknown"
         ]
+    },
+    "service_capacity": {
+        "workforce": {
+            "number_of_clinicians": 1,
+            "role": "audiologist",
+            "available_clinical_hours_per_month": 20,
+            "appointment_duration_minutes": 60
+        },
+        "regional_service": {
+            "planned_trips_per_month": 1,
+            "planned_appointments_per_month": 4,
+            "planned_clinical_hours_per_month": 4,
+            "round_trip_distance_km": 200,
+            "maximum_round_trip_distance_km": 300,
+            "round_trip_travel_hours": 4,
+            "available_travel_hours_per_month": 8,
+            "service_delivery_hours_per_trip": 6
+        },
+        "evidence_status": "simulation_assumption"
     }
 }

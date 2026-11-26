@@ -469,29 +469,47 @@ def generate_service_demands(
 
     return support_records
 
-def create_experiment_service_schedule():
-    """Create the illustrative regional audiology service schedule."""
+def create_experiment_service_schedule(experiment_config):
+    """Create the regional audiology schedule from experiment settings."""
+
+    settings = experiment_config["service_capacity"]
+    workforce_settings = settings["workforce"]
+    service_settings = settings["regional_service"]
+    evidence_status = settings["evidence_status"]
+
+    if workforce_settings["number_of_clinicians"] != 1:
+        raise ValueError(
+            "The current experiment schedule supports one clinician."
+        )
 
     workforce = WorkforceMember(
         clinician_id="CLINICIAN-001",
-        role="audiologist",
+        role=workforce_settings["role"],
         qualifications=["Audiology qualification"],
         service_types=["audiology_assessment"],
         supported_age_groups=["working_age_adult"],
-        available_clinical_hours_per_month=20,
-        appointment_duration_minutes=60,
-        evidence_status="simulation_assumption",
+        available_clinical_hours_per_month=(
+            workforce_settings["available_clinical_hours_per_month"]
+        ),
+        appointment_duration_minutes=(
+            workforce_settings["appointment_duration_minutes"]
+        ),
+        evidence_status=evidence_status,
     )
 
     route = GeographicRoute(
         route_id="ROUTE-001",
         service_id="SERVICE-001",
         destination_geography="regional",
-        round_trip_distance_km=200,
-        round_trip_travel_hours=4,
-        maximum_round_trip_distance_km=300,
-        available_travel_hours_per_month=8,
-        evidence_status="simulation_assumption",
+        round_trip_distance_km=service_settings["round_trip_distance_km"],
+        round_trip_travel_hours=service_settings["round_trip_travel_hours"],
+        maximum_round_trip_distance_km=(
+            service_settings["maximum_round_trip_distance_km"]
+        ),
+        available_travel_hours_per_month=(
+            service_settings["available_travel_hours_per_month"]
+        ),
+        evidence_status=evidence_status,
     )
 
     deployment = MobileServiceDeployment(
@@ -500,8 +518,10 @@ def create_experiment_service_schedule():
         route_id="ROUTE-001",
         service_types=["audiology_assessment"],
         target_age_groups=["working_age_adult"],
-        service_delivery_hours_per_trip=6,
-        evidence_status="simulation_assumption",
+        service_delivery_hours_per_trip=(
+            service_settings["service_delivery_hours_per_trip"]
+        ),
+        evidence_status=evidence_status,
     )
 
     suitability = AgeServiceSuitability(
@@ -510,7 +530,7 @@ def create_experiment_service_schedule():
         suitability_status="suitable",
         requirements=[],
         limitations=[],
-        evidence_status="simulation_assumption",
+        evidence_status=evidence_status,
     )
 
     capacity = assess_mobile_service_capacity(
@@ -526,9 +546,15 @@ def create_experiment_service_schedule():
         capacity_assessment=capacity,
         workforce=workforce,
         deployment=deployment,
-        planned_trips_per_month=1,
-        planned_appointments_per_month=4,
-        planned_clinical_hours_per_month=4,
+        planned_trips_per_month=(
+            service_settings["planned_trips_per_month"]
+        ),
+        planned_appointments_per_month=(
+            service_settings["planned_appointments_per_month"]
+        ),
+        planned_clinical_hours_per_month=(
+            service_settings["planned_clinical_hours_per_month"]
+        ),
     )
 
 def create_remote_service_schedule():
@@ -760,6 +786,7 @@ def run_population_experiment(
     distribution_config_path,
     intervention_config_path=None,
     random_seed_override=None,
+    population_size_override=None,
 ):
     """Load configurations and initialise the synthetic population."""
     intervention = None
@@ -772,6 +799,19 @@ def run_population_experiment(
     experiment_config = load_experiment_config(
         experiment_config_path
     )
+
+    if population_size_override is not None:
+        if (
+            isinstance(population_size_override, bool)
+            or not isinstance(population_size_override, int)
+            or population_size_override <= 0
+        ):
+            raise ValueError(
+                "population_size_override must be a positive integer."
+            )
+        experiment_config["population"]["size"] = (
+            population_size_override
+        )
 
     if random_seed_override is not None:
         if (
@@ -849,7 +889,7 @@ def run_population_experiment(
         intervention=intervention,
         relationships=relationships,
     )
-    planned_schedule = create_experiment_service_schedule()
+    planned_schedule = create_experiment_service_schedule(experiment_config)
 
 
     remote_travel_hours = (
