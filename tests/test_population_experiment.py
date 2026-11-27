@@ -260,6 +260,34 @@ class TestPopulationExperiment(unittest.TestCase):
             "Australia",
         )
 
+    def test_summary_reports_operational_assessment(self):
+        summary = self.experiment.summary()
+        operational = summary["operational_assessment"]
+
+        self.assertEqual(
+            operational["capacity_status"],
+            self.experiment.capacity_assessment.assessment_status,
+        )
+        self.assertEqual(
+            operational["capacity_constraints"],
+            self.experiment.capacity_assessment.limiting_constraints,
+        )
+        self.assertEqual(
+            operational["capacity_reasons"],
+            self.experiment.capacity_assessment.reasons,
+        )
+
+        schedule = operational["planned_schedule"]
+        self.assertIsNotNone(schedule)
+        self.assertEqual(schedule["service_id"], "SERVICE-001")
+        self.assertEqual(schedule["service_type"], "audiology_assessment")
+        self.assertEqual(schedule["planned_trips_per_month"], 1)
+        self.assertEqual(schedule["planned_appointments_per_month"], 4)
+        self.assertEqual(schedule["planned_clinical_hours_per_month"], 4)
+
+        self.assertEqual(operational["cost_status"], "not_configured")
+        self.assertEqual(operational["funding_status"], "not_configured")
+
     def test_summary_reports_country_profile(self):
         summary = self.experiment.summary()
 

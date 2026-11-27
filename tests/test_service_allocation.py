@@ -6,17 +6,132 @@ from src.service_delivery.demand import ServiceDemand
 from src.service_delivery.allocation import allocate_service_demand
 
 
-def make_agent(agent_id, age_group="working_age_adult"):
+def make_agent(
+    agent_id,
+    age_group="working_age_adult",
+    functional_status="unknown",
+):
     return Agent(
         agent_id=agent_id,
         profile=AgentProfile(
             age_group=age_group,
             hearing_profile="moderate",
+            auditory_functional_status=functional_status,
             geography="regional",
         ),
     )
 
+def test_need_based_allocation_prioritises_functional_difficulty():
+    agents = [
+        make_agent("PERSON-001", functional_status="no_identified_difficulty"),
+        make_agent("PERSON-002", functional_status="functional_difficulty_confirmed"),
+        make_agent("PERSON-003", functional_status="difficulty_reported"),
+        make_agent("PERSON-004", functional_status="unknown"),
+    ]
+    demands = [
+        make_demand("DEMAND-001", "PERSON-001"),
+        make_demand("DEMAND-002", "PERSON-002"),
+        make_demand("DEMAND-003", "PERSON-003"),
+        make_demand("DEMAND-004", "PERSON-004"),
+    ]
 
+    result = allocate_service_demand(
+        demands,
+        agents,
+        make_schedule(2),
+        allocation_policy="need_based",
+        random_seed=42,
+    )
+
+    outcomes = {item.demand_id: item.allocation_status for item in result}
+
+    assert outcomes["DEMAND-002"] == "allocated"
+    assert outcomes["DEMAND-003"] == "allocated"
+    assert outcomes["DEMAND-001"] == "unallocated"
+    assert outcomes["DEMAND-004"] == "unallocated"
+
+
+def test_need_based_allocation_preserves_unknown_ahead_of_no_identified_difficulty():
+    agents = [
+        make_agent("PERSON-001", functional_status="no_identified_difficulty"),
+        make_agent("PERSON-002", functional_status="unknown"),
+    ]
+    demands = [
+        make_demand("DEMAND-001", "PERSON-001"),
+        make_demand("DEMAND-002", "PERSON-002"),
+    ]
+
+    result = allocate_service_demand(
+        demands,
+        agents,
+        make_schedule(1),
+        allocation_policy="need_based",
+        random_seed=42,
+    )
+
+    outcomes = {item.demand_id: item.allocation_status for item in result}
+
+    assert outcomes["DEMAND-002"] == "allocated"
+    assert outcomes["DEMAND-001"] == "unallocated"
+
+
+def test_need_based_allocation_preserves_original_result_order():
+    agents = [
+        make_agent("PERSON-001", functional_status="no_identified_difficulty"),
+        make_agent("PERSON-002", functional_status="functional_difficulty_confirmed"),
+    ]
+    demands = [
+        make_demand("DEMAND-001", "PERSON-001"),
+        make_demand("DEMAND-002", "PERSON-002"),
+    ]
+
+    result = allocate_service_demand(
+        demands,
+        agents,
+        make_schedule(1),
+        allocation_policy="need_based",
+        random_seed=42,
+    )
+
+    assert [item.demand_id for item in result] == [
+        "DEMAND-001",
+        "DEMAND-002",
+    ]
+    assert result[0].allocation_status == "unallocated"
+    assert result[1].allocation_status == "allocated"
+
+
+def test_random_allocation_is_reproducible_with_same_seed():
+    agents = [make_agent(f"PERSON-{index:03d}") for index in range(1, 11)]
+    demands = [
+        make_demand(f"DEMAND-{index:03d}", f"PERSON-{index:03d}")
+        for index in range(1, 11)
+    ]
+
+    first = allocate_service_demand(
+        demands, agents, make_schedule(3),
+        allocation_policy="random", random_seed=42,
+    )
+    second = allocate_service_demand(
+        demands, agents, make_schedule(3),
+        allocation_policy="random", random_seed=42,
+    )
+
+    assert [
+        item.allocation_status for item in first
+    ] == [
+        item.allocation_status for item in second
+    ]
+
+
+def test_rejects_unknown_allocation_policy():
+    with pytest.raises(ValueError, match="Invalid allocation_policy"):
+        allocate_service_demand(
+            [],
+            [],
+            make_schedule(),
+            allocation_policy="unsupported",
+        )
 def make_demand(
     demand_id,
     agent_id,

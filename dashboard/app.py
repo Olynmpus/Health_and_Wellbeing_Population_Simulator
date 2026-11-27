@@ -751,10 +751,73 @@ with overview_tab:
         if not delivery.empty:
             st.dataframe(delivery, hide_index=True, width="stretch")
 
+    st.divider()
+    st.markdown("#### Planned service capacity")
+
+    operational = summary["operational_assessment"]
+    schedule = operational["planned_schedule"]
+
+    if schedule is not None:
+        capacity_col1, capacity_col2, capacity_col3 = st.columns(3)
+
+        capacity_col1.metric(
+            "Planned appointments / month",
+            schedule["planned_appointments_per_month"],
+        )
+        capacity_col2.metric(
+            "Planned trips / month",
+            schedule["planned_trips_per_month"],
+        )
+        capacity_col3.metric(
+            "Maximum deliverable / month",
+            schedule["maximum_deliverable_appointments_per_month"],
+        )
+
+        st.caption(
+            f"{schedule['service_type'].replace('_', ' ').title()} · "
+            f"{schedule['planned_clinical_hours_per_month']:g} planned "
+            "clinical hours per month · "
+            f"Schedule: {schedule['schedule_status']}"
+        )
+
+    st.markdown("**Capacity assessment**")
+    st.write(
+        f"Status: **{operational['capacity_status'].replace('_', ' ').title()}**"
+    )
+
+    constraints = operational["capacity_constraints"]
+    if constraints:
+        st.write(
+            "Limiting constraints: "
+            + ", ".join(item.replace("_", " ") for item in constraints)
+        )
+    else:
+        st.write("No limiting constraints recorded.")
+
+    if operational["capacity_reasons"]:
+        for reason in operational["capacity_reasons"]:
+            st.write(f"- {reason}")
+
+    financial_col1, financial_col2 = st.columns(2)
+
+    with financial_col1:
+        st.markdown("**Operational costs**")
+        st.write("Not configured")
+
+    with financial_col2:
+        st.markdown("**Funding assessment**")
+        st.write("Not configured")
+
+    st.caption(
+        "Capacity describes the configured regional audiology service. "
+        "It is not a measure of actual service delivery. Remote outreach "
+        "and financial feasibility are not included in this assessment."
+    )
     st.caption(
         "The population is hypothetical and generated from simulation "
         "assumptions. It is not an estimate of Australia's population."
     )
+
 
 
 # Population journey explorer
@@ -2056,7 +2119,7 @@ with journeys_tab:
 
 # Experiment runner
 with experiment_tab:
-    
+
     st.subheader("Configure and compare population scenarios")
 
     st.write(
@@ -2128,7 +2191,120 @@ with experiment_tab:
         "The three geographical percentages always add up to 100%."
     )
 
-    st.markdown("#### Service assumptions")
+    # Read configured service capacity and allocation defaults.
+    with CONFIG.open("r", encoding="utf-8") as file:
+        experiment_defaults = json.load(file)
+
+    capacity_defaults = experiment_defaults["service_capacity"]
+    allocation_defaults = experiment_defaults.get(
+        "service_allocation",
+        {},
+    )
+
+    workforce_defaults = capacity_defaults["workforce"]
+    regional_defaults = capacity_defaults["regional_service"]
+
+    appointment_minutes = int(
+        workforce_defaults["appointment_duration_minutes"]
+    )
+    maximum_trips = int(
+        regional_defaults["available_travel_hours_per_month"]
+        // regional_defaults["round_trip_travel_hours"]
+    )
+    appointments_per_trip = int(
+        regional_defaults["service_delivery_hours_per_trip"]
+        * 60 // appointment_minutes
+    )
+    workforce_appointment_capacity = int(
+        workforce_defaults["available_clinical_hours_per_month"]
+        * 60 // appointment_minutes
+    )
+    maximum_appointments = min(
+        maximum_trips * appointments_per_trip,
+        workforce_appointment_capacity,
+    )
+
+    st.markdown("#### Service capacity")
+
+    capacity_col1, capacity_col2, capacity_col3 = st.columns(3)
+
+    with capacity_col1:
+        planned_appointments = st.slider(
+            "Planned appointments per month",
+            min_value=0,
+            max_value=maximum_appointments,
+            value=min(
+                int(regional_defaults["planned_appointments_per_month"]),
+                maximum_appointments,
+            ),
+            step=1,
+            help="Monthly appointment capacity, limited by travel, deployment and workforce availability.",
+        )
+
+    planned_trips = (
+        (planned_appointments + appointments_per_trip - 1)
+        // appointments_per_trip
+        if planned_appointments > 0 else 0
+    )
+
+    planned_clinical_hours = (
+        planned_appointments * appointment_minutes / 60
+    )
+
+    with capacity_col2:
+        st.metric("Required trips per month", planned_trips)
+
+    with capacity_col3:
+        st.metric(
+            "Planned clinical hours per month",
+            f"{planned_clinical_hours:g}",
+        )
+
+    st.caption(
+        f"Each trip supports up to {appointments_per_trip} appointments. "
+        f"Maximum monthly capacity: {maximum_appointments} appointments. "
+        "Trips and clinical hours are calculated automatically."
+    )
+
+    st.markdown("#### Service allocation policy")
+
+    allocation_policy_options = [
+        "first_come_first_served",
+        "need_based",
+        "random",
+    ]
+
+    allocation_policy_labels = {
+        "first_come_first_served": "First come, first served",
+        "need_based": "Need-based",
+        "random": "Random",
+    }
+
+    allocation_policy = st.selectbox(
+        "Allocation policy",
+        options=allocation_policy_options,
+        index=allocation_policy_options.index(
+            allocation_defaults.get(
+                "policy",
+                "first_come_first_served",
+            )
+        ),
+        format_func=lambda value: allocation_policy_labels[value],
+        help=(
+            "Determines how eligible service requests are prioritised "
+            "when available appointments are limited."
+        ),
+    )
+
+    if allocation_policy == "need_based":
+        st.caption(
+            "Priority: confirmed functional difficulty, reported "
+            "difficulty, unknown status, then no identified difficulty. "
+            "This is an illustrative simulation assumption, not "
+            "a clinically validated triage rule."
+        )
+
+    st.markdown("#### Service demand and attendance")
 
     col1, col2 = st.columns(2)
 
@@ -2178,6 +2354,9 @@ with experiment_tab:
             {"Parameter": "Remote / very remote (%)", "Value": remote_pct},
             {"Parameter": "Annual demand probability", "Value": demand_probability},
             {"Parameter": "Attendance probability", "Value": attendance_probability},
+            {"Parameter": "Planned trips per month", "Value": planned_trips},
+            {"Parameter": "Planned appointments per month", "Value": planned_appointments},
+            {"Parameter": "Planned clinical hours per month", "Value": planned_clinical_hours},
             {"Parameter": "Starting random seed", "Value": base_seed},
             {"Parameter": "Repetitions per scenario", "Value": repetitions},
         ]),
@@ -2215,6 +2394,17 @@ with experiment_tab:
 
             experiment_config["attendance"]["attendance_probability"] = (
                 float(attendance_probability)
+            )
+
+            regional_service = experiment_config["service_capacity"][
+                "regional_service"
+            ]
+            regional_service["planned_trips_per_month"] = int(planned_trips)
+            regional_service["planned_appointments_per_month"] = int(
+                planned_appointments
+            )
+            regional_service["planned_clinical_hours_per_month"] = float(
+                planned_clinical_hours
             )
 
             # Keep the temporary file beside the original configuration.
@@ -2263,6 +2453,11 @@ with experiment_tab:
                     "remote_pct": int(remote_pct),
                     "demand_probability": float(demand_probability),
                     "attendance_probability": float(attendance_probability),
+                    "planned_trips_per_month": int(planned_trips),
+                    "planned_appointments_per_month": int(planned_appointments),
+                    "planned_clinical_hours_per_month": float(
+                        planned_clinical_hours
+                    ),
                     "base_seed": int(base_seed),
                     "repetitions": int(repetitions),
                 }

@@ -52,6 +52,68 @@ def validate_currency_conversion(config):
 
     return True
 
+def validate_service_allocation(config):
+    """Validate configurable service allocation settings."""
+
+    settings = config.get("service_allocation")
+
+    if settings is None:
+        return True
+
+    if not isinstance(settings, dict):
+        raise ValueError(
+            "service_allocation must be an object."
+        )
+
+    valid_policies = {
+        "first_come_first_served",
+        "need_based",
+        "random",
+    }
+
+    policy = settings.get(
+        "policy",
+        "first_come_first_served",
+    )
+
+    if policy not in valid_policies:
+        raise ValueError(
+            f"Invalid service allocation policy: {policy}"
+        )
+
+    if policy == "need_based":
+        priority = settings.get("need_priority")
+
+        expected = {
+            "functional_difficulty_confirmed",
+            "difficulty_reported",
+            "unknown",
+            "no_identified_difficulty",
+        }
+
+        if (
+            not isinstance(priority, list)
+            or len(priority) != 4
+            or set(priority) != expected
+        ):
+            raise ValueError(
+                "need_priority must contain each recognised "
+                "functional status exactly once."
+            )
+
+    evidence = settings.get(
+        "evidence_status",
+        "simulation_assumption",
+    )
+
+    if not isinstance(evidence, str) or not evidence.strip():
+        raise ValueError(
+            "Service allocation evidence_status must be "
+            "a non-empty string."
+        )
+
+    return True
+
 def load_experiment_config(config_path):
     """
     Load an experiment configuration from a JSON file.
@@ -88,6 +150,7 @@ def validate_config(config):
             raise ValueError(f"Missing configuration section: {section}")
 
     validate_currency_conversion(config)
+    validate_service_allocation(config)
     population_size = config["population"]["size"]
 
     if population_size <= 0:

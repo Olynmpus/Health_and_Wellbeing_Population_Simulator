@@ -91,6 +91,16 @@
         "attendance_probability": 0.8,
         "evidence_status": "simulation_assumption"
     },
+    "service_allocation": {
+        "policy": "first_come_first_served",
+        "need_priority": [
+            "functional_difficulty_confirmed",
+            "difficulty_reported",
+            "unknown",
+            "no_identified_difficulty"
+        ],
+        "evidence_status": "simulation_assumption"
+    },
     "evidence_status": "illustrative_assumptions_pending_calibration",
     "auditory_function": {
         "functional_statuses": [

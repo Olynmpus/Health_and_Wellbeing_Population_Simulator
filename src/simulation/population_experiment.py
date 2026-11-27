@@ -149,7 +149,11 @@ class PopulationExperiment:
     relationship_evidence_status: str | None = None
     intervention: object | None = None
     remote_travel_hours: float | None = None
-    remote_travel_hours: float | None = None
+    allocation_policy: str = "first_come_first_served"
+    allocation_evidence_status: str = "simulation_assumption"
+    allocation_need_priority: list | None = None
+    capacity_assessment: object | None = None
+    planned_schedule: PlannedServiceSchedule | None = None
 
     def summary(self):
         """Return population counts and profile distributions."""
@@ -256,12 +260,16 @@ class PopulationExperiment:
             "random_seed": self.random_seed,
             "distribution_profile_id": self.distribution_profile_id,
             "evidence_status": self.evidence_status,
+            "service_allocation": {
+                "policy": self.allocation_policy,
+                "need_priority": self.allocation_need_priority,
+                "evidence_status": self.allocation_evidence_status,
+            },
             "intervention": (
                 {
                     "intervention_id": self.intervention.intervention_id,
                     "name": self.intervention.name,
                     "evidence_status": self.intervention.evidence_status,
-                    "remote_round_trip_travel_hours": self.remote_travel_hours,
                     "remote_round_trip_travel_hours": self.remote_travel_hours,
                 }
                 if self.intervention is not None
@@ -305,6 +313,47 @@ class PopulationExperiment:
                 "delivery_outcomes": dict(delivery_counts),
                 "allocations_by_clinician": dict(allocations_by_clinician),
                 "deliveries_by_clinician": dict(deliveries_by_clinician),
+            },
+            "operational_assessment": {
+                "capacity_status": (
+                    self.capacity_assessment.assessment_status
+                    if self.capacity_assessment is not None
+                    else "not_assessed"
+                ),
+                "capacity_constraints": (
+                    self.capacity_assessment.limiting_constraints
+                    if self.capacity_assessment is not None
+                    else []
+                ),
+                "capacity_reasons": (
+                    self.capacity_assessment.reasons
+                    if self.capacity_assessment is not None
+                    else []
+                ),
+                "planned_schedule": (
+                    {
+                        "service_id": self.planned_schedule.service_id,
+                        "service_type": self.planned_schedule.service_type,
+                        "age_group": self.planned_schedule.age_group,
+                        "planned_trips_per_month": (
+                            self.planned_schedule.planned_trips_per_month
+                        ),
+                        "planned_appointments_per_month": (
+                            self.planned_schedule.planned_appointments_per_month
+                        ),
+                        "planned_clinical_hours_per_month": (
+                            self.planned_schedule.planned_clinical_hours_per_month
+                        ),
+                        "maximum_deliverable_appointments_per_month": (
+                            self.planned_schedule.maximum_deliverable_appointments_per_month
+                        ),
+                        "schedule_status": self.planned_schedule.schedule_status,
+                    }
+                    if self.planned_schedule is not None
+                    else None
+                ),
+                "cost_status": "not_configured",
+                "funding_status": "not_configured",
             },
             "population_distributions": {
                 "age_group": distribution(
@@ -542,7 +591,7 @@ def create_experiment_service_schedule(experiment_config):
         "working_age_adult",
     )
 
-    return create_planned_service_schedule(
+    planned_schedule = create_planned_service_schedule(
         capacity_assessment=capacity,
         workforce=workforce,
         deployment=deployment,
@@ -556,6 +605,8 @@ def create_experiment_service_schedule(experiment_config):
             service_settings["planned_clinical_hours_per_month"]
         ),
     )
+
+    return capacity, planned_schedule
 
 def create_remote_service_schedule():
     """Create the quarterly remote outreach schedule."""
@@ -575,6 +626,7 @@ def create_remote_service_schedule():
     schedule.validate()
     return schedule
 
+
 def allocate_monthly_service_demands(
     agents,
     support_records,
@@ -582,8 +634,17 @@ def allocate_monthly_service_demands(
     duration_months,
     remote_schedule=None,
     remote_travel_hours=None,
+    allocation_settings=None,
+    random_seed=None,
 ):
     """Allocate monthly requests against planned service capacity."""
+
+    allocation_settings = allocation_settings or {}
+    allocation_policy = allocation_settings.get(
+        "policy",
+        "first_come_first_served",
+    )
+    need_priority = allocation_settings.get("need_priority")
 
     record_lookup = {
         record.agent_id: record
@@ -613,9 +674,14 @@ def allocate_monthly_service_demands(
             demands=regional_demands,
             agents=agents,
             planned_schedule=planned_schedule,
+            allocation_policy=allocation_policy,
+            random_seed=(
+                random_seed + month * 2
+                if random_seed is not None else None
+            ),
+            need_priority=need_priority,
         )
 
-        
         if (
             remote_schedule is not None
             and remote_travel_hours is not None
@@ -632,6 +698,12 @@ def allocate_monthly_service_demands(
                 demands=remote_demands,
                 agents=agents,
                 planned_schedule=remote_schedule,
+                allocation_policy=allocation_policy,
+                random_seed=(
+                    random_seed + month * 2 + 1
+                    if random_seed is not None else None
+                ),
+                need_priority=need_priority,
             )
 
             allocations.extend(remote_allocations)
@@ -642,6 +714,7 @@ def allocate_monthly_service_demands(
             )
 
     return support_records
+
 
 def record_monthly_service_delivery(
     support_records,
@@ -678,48 +751,6 @@ def record_monthly_service_delivery(
             delivery = create_service_delivery(
                 allocation=allocation,
                 delivery_month=demand.request_month,
-                attendance_status=(
-                    "attended" if attended else "did_not_attend"
-                ),
-                delivery_status=(
-                    "delivered" if attended else "not_delivered"
-                ),
-                evidence_status=evidence_status,
-            )
-
-            record.add_service_delivery(delivery)
-
-    return support_records
-
-def record_monthly_service_delivery(
-    support_records,
-    experiment_config,
-):
-    """Record attendance and service delivery for allocated appointments."""
-
-    settings = experiment_config["attendance"]
-    probability = settings["attendance_probability"]
-    evidence_status = settings["evidence_status"]
-
-    seed = experiment_config["simulation"].get("random_seed")
-    rng = random.Random(seed + 2 if seed is not None else None)
-
-    demand_months = {
-        demand.demand_id: demand.request_month
-        for record in support_records
-        for demand in record.service_demands
-    }
-
-    for record in support_records:
-        for allocation in record.service_allocations:
-            if allocation.allocation_status != "allocated":
-                continue
-
-            attended = rng.random() < probability
-
-            delivery = create_service_delivery(
-                allocation=allocation,
-                delivery_month=demand_months[allocation.demand_id],
                 attendance_status=(
                     "attended" if attended else "did_not_attend"
                 ),
@@ -889,8 +920,10 @@ def run_population_experiment(
         intervention=intervention,
         relationships=relationships,
     )
-    planned_schedule = create_experiment_service_schedule(experiment_config)
 
+    capacity_assessment, planned_schedule = (
+        create_experiment_service_schedule(experiment_config)
+    )
 
     remote_travel_hours = (
         generate_remote_round_trip_travel_hours(
@@ -912,6 +945,13 @@ def run_population_experiment(
         duration_months=experiment_config["simulation"]["duration_months"],
         remote_schedule=remote_schedule,
         remote_travel_hours=remote_travel_hours,
+        allocation_settings=experiment_config.get(
+            "service_allocation",
+            {},
+        ),
+        random_seed=experiment_config["simulation"].get(
+            "random_seed"
+        ),
     )
 
     support_records = record_monthly_service_delivery(
@@ -941,6 +981,17 @@ def run_population_experiment(
         relationship_evidence_status=relationship_evidence_status,
         intervention=intervention,
         remote_travel_hours=remote_travel_hours,
+        allocation_policy=experiment_config.get(
+            "service_allocation", {}
+        ).get("policy", "first_come_first_served"),
+        allocation_evidence_status=experiment_config.get(
+            "service_allocation", {}
+        ).get("evidence_status", "simulation_assumption"),
+        allocation_need_priority=experiment_config.get(
+            "service_allocation", {}
+        ).get("need_priority"),
+        capacity_assessment=capacity_assessment,
+        planned_schedule=planned_schedule,
     )
 
 

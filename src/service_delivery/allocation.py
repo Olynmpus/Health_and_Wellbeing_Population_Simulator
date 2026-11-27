@@ -49,13 +49,22 @@ def allocate_service_demand(
     demands: list[ServiceDemand],
     agents: list[Agent],
     planned_schedule: PlannedServiceSchedule,
+    allocation_policy: str = "first_come_first_served",
+    random_seed: int | None = None,
+    need_priority: list[str] | None = None,
 ) -> list[ServiceAllocation]:
-    """Allocate matching requests without exceeding planned appointments.
+    """Allocate service demand against planned monthly capacity.
 
-    Requests are processed in their supplied order. Every valid demand
-    receives an allocation outcome, including requests that cannot be
-    allocated.
+    Supported policies:
+    - first_come_first_served
+    - need_based
+    - random
+
+    Every valid demand receives an allocation outcome. Returned outcomes
+    retain the original demand order, regardless of allocation policy.
     """
+
+    import random
 
     if not isinstance(demands, list):
         raise TypeError("demands must be a list.")
@@ -67,6 +76,34 @@ def allocate_service_demand(
         raise TypeError(
             "planned_schedule must be a PlannedServiceSchedule."
         )
+
+    if allocation_policy not in {
+        "first_come_first_served",
+        "need_based",
+        "random",
+    }:
+        raise ValueError("Invalid allocation_policy.")
+
+    if need_priority is None:
+        need_priority = [
+            "functional_difficulty_confirmed",
+            "difficulty_reported",
+            "unknown",
+            "no_identified_difficulty",
+        ]
+
+    if allocation_policy == "need_based":
+        if (
+            not isinstance(need_priority, list)
+            or len(need_priority) != 4
+            or set(need_priority) != {
+                "functional_difficulty_confirmed",
+                "difficulty_reported",
+                "unknown",
+                "no_identified_difficulty",
+            }
+        ):
+            raise ValueError("Invalid need_priority configuration.")
 
     planned_schedule.validate()
 
@@ -101,29 +138,66 @@ def allocate_service_demand(
                 f"No Agent found for demand: {demand.demand_id}"
             )
 
-    allocations = []
-    allocated_count = 0
-    capacity = planned_schedule.planned_appointments_per_month
+    eligible = []
+    outcomes = {}
 
-    for demand in demands:
+    for index, demand in enumerate(demands):
         agent = agent_lookup[demand.agent_id]
         age_group = agent.profile.age_group
 
-        status = "unallocated"
+        reason = None
 
         if demand.service_type != planned_schedule.service_type:
             reason = "service_type_not_in_schedule"
-
         elif age_group != planned_schedule.age_group:
             reason = "age_group_not_in_schedule"
 
-        elif allocated_count >= capacity:
-            reason = "planned_appointment_capacity_exhausted"
-
+        if reason is not None:
+            outcomes[demand.demand_id] = (False, reason)
         else:
-            status = "allocated"
-            reason = "matching_request_allocated"
-            allocated_count += 1
+            eligible.append((index, demand, agent))
+
+    rng = random.Random(random_seed)
+
+    if allocation_policy == "need_based":
+        priority_lookup = {
+            status: index
+            for index, status in enumerate(need_priority)
+        }
+
+        eligible.sort(
+            key=lambda item: (
+                priority_lookup.get(
+                    item[2].profile.auditory_functional_status,
+                    priority_lookup["unknown"],
+                ),
+                rng.random(),
+                item[0],
+            )
+        )
+
+    elif allocation_policy == "random":
+        rng.shuffle(eligible)
+
+    capacity = planned_schedule.planned_appointments_per_month
+
+    for position, (_, demand, _) in enumerate(eligible):
+        if position < capacity:
+            outcomes[demand.demand_id] = (
+                True,
+                "matching_request_allocated",
+            )
+        else:
+            outcomes[demand.demand_id] = (
+                False,
+                "planned_appointment_capacity_exhausted",
+            )
+
+    allocations = []
+
+    for demand in demands:
+        agent = agent_lookup[demand.agent_id]
+        allocated, reason = outcomes[demand.demand_id]
 
         allocations.append(
             ServiceAllocation(
@@ -131,9 +205,11 @@ def allocate_service_demand(
                 agent_id=demand.agent_id,
                 service_id=planned_schedule.service_id,
                 service_type=demand.service_type,
-                age_group=age_group,
+                age_group=agent.profile.age_group,
                 clinician_id=planned_schedule.clinician_id,
-                allocation_status=status,
+                allocation_status=(
+                    "allocated" if allocated else "unallocated"
+                ),
                 reason=reason,
             )
         )
